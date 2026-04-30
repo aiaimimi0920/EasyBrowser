@@ -7,6 +7,12 @@ multi-repository `BrowserService` workspace. The legacy workspace remains the
 source archive for migration comparison, while all public-repository
 restructuring, CI/CD, and contributor ergonomics now live here.
 
+## Development Workflow
+
+See `docs/development-workflow.md` for the shared cross-repository development
+rules used for local-first iteration, temporary test assets, and final
+GHCR-based validation.
+
 ## Repository Layout
 
 ```text
