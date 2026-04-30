@@ -1,0 +1,79 @@
+# GET /admin/routes/summary response draft
+
+success: true
+code: "route_summary"
+message: ""
+
+data:
+  totals:
+    total_routes: 12
+    total_fallbacks: 2
+
+  recent_events:
+    - task_id: "task-000200"
+      state: "succeeded"
+      strategy_profile: "chrome-first"
+      selected_provider: "chrome"
+
+  recent_fallbacks:
+    - task_id: "task-000199"
+      state: "succeeded"
+      strategy_profile: "stealth-first"
+      selected_provider: "chrome"
+      fallback_used: true
+
+  top_rejections:
+    - provider_id: "browserbase"
+      rejection_reason: "unsupported_action"
+      count: 8
+    - provider_id: "camoufox"
+      rejection_reason: "disabled"
+      count: 2
+
+  provider_selections:
+    - provider_id: "chrome"
+      count: 7
+    - provider_id: "camoufox"
+      count: 3
+    - provider_id: "browserbase"
+      count: 2
+
+  profile_usage:
+    - strategy_profile: "chrome-first"
+      count: 4
+    - strategy_profile: "stealth-first"
+      count: 3
+    - strategy_profile: "latency-first"
+      count: 2
+
+  provider_health:
+    - provider_id: "chrome"
+      enabled: true
+      healthy: true
+      cooldown_active: false
+      total_task_succeeded_count: 7
+      total_task_failed_count: 1
+      total_spawn_started_count: 2
+      windows:
+        - window: "10m"
+          task_succeeded_count: 2
+          task_failed_count: 0
+          success_rate: 1.0
+          failure_rate: 0.0
+
+  recent_operational_events:
+    - event_id: "evt-000301"
+      kind: "route_fallback"
+      severity: "warn"
+      provider_id: "chrome"
+      task_id: "task-000199"
+      occurred_at: "2026-03-31T00:00:05Z"
+      message: "fallback selected provider chrome"
+
+  window_stats:
+    - window: "10m"
+      since: "2026-03-31T23:50:00Z"
+      total_routes: 3
+      total_fallbacks: 1
+
+trace: {}

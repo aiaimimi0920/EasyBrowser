@@ -1,0 +1,7 @@
+# Internal runtime registration draft
+
+runtime_id: "rt-chrome-001"
+provider_id: "chrome"
+pid: 1234
+state: "ready"
+started_at: "2026-03-31T00:00:00Z"

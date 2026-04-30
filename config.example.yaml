@@ -1,0 +1,17 @@
+# Root operator config for EasyBrowser.
+#
+# This file is intentionally minimal during the planning phase. Real sections
+# will be expanded as modules are imported into the monorepo.
+
+serviceBase:
+  runtime:
+    listen: "127.0.0.1:18080"
+
+chromeRuntime:
+  headless: true
+
+publishing:
+  ghcr:
+    registry: "ghcr.io"
+    namespace: ""
+    imageName: "easybrowser-service"

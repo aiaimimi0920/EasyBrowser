@@ -1,0 +1,12 @@
+# Runtime health skeleton
+
+runtime_id: ""
+provider_id: ""
+healthy: false
+
+signals:
+  last_heartbeat_at: ""
+  recent_failures: 0
+  cooldown_active: false
+
+notes: ""

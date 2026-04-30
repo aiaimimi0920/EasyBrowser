@@ -1,0 +1,4 @@
+# POST /v1/tasks/:taskId/cancel request draft
+
+reason: "operator_cancel"
+requested_by: "admin"

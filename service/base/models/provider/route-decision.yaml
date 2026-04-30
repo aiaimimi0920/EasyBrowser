@@ -1,0 +1,11 @@
+# Route decision skeleton
+
+mode: "strategy"
+selected_provider: ""
+selected_runtime_id: ""
+
+decision:
+  reason: ""
+  fallback_used: false
+  considered_providers: []
+  rejected_providers: []

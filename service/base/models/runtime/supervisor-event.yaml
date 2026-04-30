@@ -1,0 +1,9 @@
+# Supervisor event skeleton
+
+event_id: ""
+runtime_id: ""
+provider_id: ""
+kind: "" # child_started | child_exited | heartbeat_missed | restart_scheduled
+occurred_at: ""
+
+details: {}

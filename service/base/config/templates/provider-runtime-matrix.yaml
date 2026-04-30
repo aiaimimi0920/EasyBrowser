@@ -1,0 +1,16 @@
+# EasyBrowser provider runtime matrix skeleton
+
+parent:
+  language: "go"
+  role: "orchestrator"
+
+providers:
+  chrome:
+    language: "nodejs"
+    transport: "stdio"
+  camoufox:
+    language: "python"
+    transport: "stdio"
+  browserbase:
+    language: "nodejs"
+    transport: "stdio"

@@ -1,0 +1,46 @@
+# GET /admin/routes/windows response draft
+
+success: true
+code: "route_windows"
+message: ""
+
+data:
+  windows:
+    - window: "10m"
+      since: "2026-04-01T00:00:00Z"
+      total_routes: 3
+      total_fallbacks: 1
+      total_failures: 0
+      provider_selections:
+        - provider_id: "chrome"
+          count: 2
+        - provider_id: "camoufox"
+          count: 1
+      profile_usage:
+        - strategy_profile: "stealth-first"
+          count: 2
+        - strategy_profile: "chrome-first"
+          count: 1
+      rejections:
+        - provider_id: "browserbase"
+          rejection_reason: "unsupported_action"
+          count: 3
+        - provider_id: "camoufox"
+          rejection_reason: "disabled"
+          count: 1
+      event_counts:
+        route_selected: 3
+        route_fallback: 1
+        provider_disabled: 1
+
+    - window: "1h"
+      since: "2026-03-31T23:10:00Z"
+      total_routes: 3
+      total_fallbacks: 1
+
+    - window: "24h"
+      since: "2026-03-31T00:10:00Z"
+      total_routes: 12
+      total_fallbacks: 2
+
+trace: {}

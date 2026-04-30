@@ -1,0 +1,10 @@
+# Internal runtime heartbeat draft
+
+runtime_id: "rt-chrome-001"
+provider_id: "chrome"
+healthy: true
+timestamp: "2026-03-31T00:00:10Z"
+
+signals:
+  recent_failures: 0
+  cooldown_active: false

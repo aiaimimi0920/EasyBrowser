@@ -1,0 +1,32 @@
+# GET /admin/providers response draft
+
+success: true
+code: "provider_list"
+message: ""
+
+data:
+  providers:
+    - provider_id: "chrome"
+      kind: "chrome"
+      enabled: true
+      disabled_reason: ""
+      cooldown_active: false
+      cooldown_until: ""
+      healthy: true
+      failure_count: 0
+      last_error: ""
+      last_failure_at: ""
+      last_success_at: ""
+      capabilities:
+        supports_direct_mode: true
+        supports_strategy_mode: true
+      limits:
+        max_runtimes: 10
+      stats_summary:
+        total_requests: 0
+        total_failures: 0
+        recent_failures: 0
+        cooldown_until: ""
+        last_error: ""
+
+trace: {}

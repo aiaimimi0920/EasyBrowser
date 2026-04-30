@@ -1,0 +1,24 @@
+# GET /admin/runtimes response draft
+
+success: true
+code: "runtime_list"
+message: ""
+
+data:
+  runtimes:
+    - runtime_id: "rt-chrome-001"
+      provider_id: "chrome"
+      state: "ready"
+      healthy: true
+      pid: 1234
+      current_task_id: ""
+      lease_id: ""
+      cooldown_active: false
+      cooldown_until: ""
+      failure_count: 0
+      last_error: ""
+      last_failure_at: ""
+      last_success_at: ""
+      last_heartbeat_at: "2026-03-31T00:00:00Z"
+
+trace: {}

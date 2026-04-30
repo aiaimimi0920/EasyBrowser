@@ -1,0 +1,24 @@
+# EasyBrowser task status response skeleton
+
+success: true
+code: "task_status"
+message: ""
+
+data:
+  task_id: ""
+  state: "queued"
+  mode: "strategy"
+  route:
+    selected_provider: ""
+    runtime_id: ""
+    strategy_reason: ""
+  timing:
+    queued_at: ""
+    started_at: ""
+    finished_at: ""
+  result: {}
+  error: null
+
+trace:
+  request_id: ""
+  task_id: ""

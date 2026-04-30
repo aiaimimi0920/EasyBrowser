@@ -1,0 +1,13 @@
+# Runtime allocation skeleton
+
+success: true
+
+allocation:
+  runtime_id: ""
+  provider_id: ""
+  source: "reused" # reused | fresh
+  lease_id: ""
+
+reason:
+  code: ""
+  message: ""

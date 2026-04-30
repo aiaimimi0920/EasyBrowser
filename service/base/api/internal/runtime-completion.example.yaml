@@ -1,0 +1,8 @@
+# Internal runtime completion draft
+
+runtime_id: "rt-chrome-001"
+task_id: "task-demo-001"
+success: true
+result: {}
+error: null
+finished_at: "2026-03-31T00:00:30Z"

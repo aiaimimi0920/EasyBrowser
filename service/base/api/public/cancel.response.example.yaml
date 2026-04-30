@@ -1,0 +1,12 @@
+# POST /v1/tasks/:taskId/cancel response draft
+
+success: true
+code: "task_cancel_requested"
+message: "Cancellation requested"
+
+data:
+  task_id: "task-demo-001"
+  cancel_state: "requested"
+
+trace:
+  task_id: "task-demo-001"

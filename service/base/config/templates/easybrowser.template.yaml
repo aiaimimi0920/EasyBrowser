@@ -1,0 +1,34 @@
+# EasyBrowser skeleton config template
+
+service:
+  listen: "127.0.0.1:0"
+  mode: "strategy"
+
+providers:
+  chrome:
+    enabled: true
+    max_runtimes: 0
+  camoufox:
+    enabled: true
+    max_runtimes: 0
+  browserbase:
+    enabled: true
+    api_key_ref: ""
+    project_id: ""
+
+strategy:
+  default_mode: "strategy"
+  preferred_order: []
+
+cooling:
+  enabled: true
+  failure_threshold: 0
+  cooldown_seconds: 0
+
+stats:
+  enabled: true
+  retention_window_seconds: 0
+
+process_pool:
+  global_max_runtimes: 0
+  spawn_timeout_seconds: 0

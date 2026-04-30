@@ -1,0 +1,143 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  XRAY_FALLBACK_VERSION: 'v26.3.27'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64
+          - platform: macos-latest
+            os: darwin
+            arch: arm64
+            xray_asset: Xray-macos-arm64-v8a.zip
+            build_cmd: npm run build:mac
+          # macOS x64
+          - platform: macos-15-intel
+            os: darwin
+            arch: x64
+            xray_asset: Xray-macos-64.zip
+            build_cmd: npm run build:mac
+          # Windows x64
+          - platform: windows-latest
+            os: win32
+            arch: x64
+            xray_asset: Xray-windows-64.zip
+            build_cmd: npm run build && npx electron-builder --win nsis zip --x64
+          # Windows ARM64
+          - platform: windows-latest
+            os: win32
+            arch: arm64
+            xray_asset: Xray-windows-arm64-v8a.zip
+            build_cmd: npm run build && npx electron-builder --win nsis zip --arm64
+          # Linux x64
+          - platform: ubuntu-latest
+            os: linux
+            arch: x64
+            xray_asset: Xray-linux-64.zip
+            build_cmd: npm run build:linux
+          # Linux ARM64
+          - platform: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+            xray_asset: Xray-linux-arm64-v8a.zip
+            build_cmd: npm run build && npx electron-builder --linux --arm64
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - run: npm ci --ignore-scripts
+
+      - name: Get Xray version
+        id: xray
+        shell: bash
+        run: |
+          RESPONSE=$(curl -sL "https://api.github.com/repos/XTLS/Xray-core/releases/latest")
+          VER=$(echo "$RESPONSE" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('tag_name',''))" 2>/dev/null || echo "")
+          [ -z "$VER" ] && VER="${{ env.XRAY_FALLBACK_VERSION }}"
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Download Xray
+        shell: bash
+        run: |
+          BIN_DIR="resources/bin/${{ matrix.os }}-${{ matrix.arch }}"
+          mkdir -p "$BIN_DIR"
+          curl -sL -o xray.zip "https://github.com/XTLS/Xray-core/releases/download/${{ steps.xray.outputs.version }}/${{ matrix.xray_asset }}"
+          unzip -o xray.zip -d "$BIN_DIR/" && rm xray.zip
+          mv "$BIN_DIR/geoip.dat" "$BIN_DIR/geosite.dat" resources/bin/ 2>/dev/null || true
+          rm -f "$BIN_DIR"/{LICENSE,README.md}
+          [ "${{ matrix.os }}" != "win32" ] && chmod +x "$BIN_DIR/xray" || true
+
+      - name: Download Chrome
+        run: npx @puppeteer/browsers install chrome@147.0.7727.50 --path resources/puppeteer
+
+      - name: Build
+        run: ${{ matrix.build_cmd }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Rename Windows portable zip
+        if: matrix.os == 'win32'
+        shell: bash
+        run: |
+          for file in dist/*.zip; do
+            if [ -f "$file" ]; then
+              mv "$file" "${file%.zip}-portable.zip"
+            fi
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.zip
+            dist/*.AppImage
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.zip
+            artifacts/**/*.AppImage
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

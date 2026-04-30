@@ -1,0 +1,15 @@
+# Provider result skeleton
+
+provider_id: ""
+runtime_id: ""
+success: true
+
+result:
+  kind: ""     # provider-normalized result kind
+  payload: {}
+
+timing:
+  started_at: ""
+  finished_at: ""
+
+error: null

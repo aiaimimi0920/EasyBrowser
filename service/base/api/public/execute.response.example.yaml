@@ -1,0 +1,30 @@
+# POST /v1/execute response draft
+
+success: true
+code: "task_accepted"
+message: "Task accepted"
+
+data:
+  task_id: "task-demo-001"
+  state: "queued"
+  route:
+    mode: "strategy"
+    strategy_profile: "latency-first"
+    selected_provider: ""
+    runtime_id: ""
+    diagnostics:
+      action: "open_resource"
+      action_class: "generic"
+      resource_kind: "page"
+      runtime_reuse: "prefer_reuse"
+      profile: "latency-first"
+      score: 300
+      breakdown:
+        base_score: 110
+        profile_bonus: 30
+        reuse_bonus: 120
+        ready_runtime_bonus: 80
+
+trace:
+  request_id: "req-demo-001"
+  task_id: "task-demo-001"

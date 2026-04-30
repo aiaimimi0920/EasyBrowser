@@ -1,0 +1,21 @@
+# Cooling trigger matrix skeleton
+
+startup_failure:
+  provider_level_candidate: true
+  runtime_level_candidate: true
+
+execution_failure:
+  provider_level_candidate: true
+  runtime_level_candidate: true
+
+transport_failure:
+  provider_level_candidate: true
+  runtime_level_candidate: true
+
+abnormal_exit:
+  provider_level_candidate: false
+  runtime_level_candidate: true
+
+heartbeat_missed:
+  provider_level_candidate: false
+  runtime_level_candidate: true

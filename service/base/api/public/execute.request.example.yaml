@@ -1,0 +1,36 @@
+# POST /v1/execute request draft
+
+request_id: "req-demo-001"
+mode: "strategy"
+
+target:
+  provider: ""
+  allowed_providers:
+    - "chrome"
+    - "camoufox"
+    - "browserbase"
+  strategy_profile: "latency-first"
+
+operation:
+  kind: "task"
+  payload:
+    action: "open_resource"
+    resource_kind: "page"
+    url: "https://example.com"
+
+timeout:
+  total_ms: 60000
+  startup_ms: 15000
+
+retry:
+  allow_retry: true
+  max_attempts: 2
+
+isolation:
+  require_separate_process: true
+  runtime_reuse: "prefer_reuse"
+
+metadata:
+  caller: "demo"
+  tags:
+    - "sample"

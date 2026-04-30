@@ -1,0 +1,190 @@
+name: Publish Service Base GHCR
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "release-*"
+      - "service-base-*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional image version tag override"
+        required: false
+        type: string
+      platform:
+        description: "Docker build platform list"
+        required: false
+        default: "linux/amd64"
+        type: string
+      push_latest:
+        description: "Also publish the latest tag"
+        required: false
+        default: true
+        type: boolean
+      run_smoke:
+        description: "Run container health smoke check before pushing"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    env:
+      DEFAULT_REGISTRY: ghcr.io
+      DEFAULT_IMAGE_NAME: easybrowser-service
+
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: service/base/go.mod
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Materialize Operator Config
+        env:
+          EASYBROWSER_SERVICE_LISTEN: ${{ secrets.EASYBROWSER_SERVICE_LISTEN }}
+          EASYBROWSER_CHROME_HEADLESS: ${{ secrets.EASYBROWSER_CHROME_HEADLESS }}
+          EASYBROWSER_GHCR_IMAGE_NAME: ${{ vars.EASYBROWSER_GHCR_IMAGE_NAME }}
+          EASYBROWSER_GHCR_NAMESPACE: ${{ vars.EASYBROWSER_GHCR_NAMESPACE }}
+          EASYBROWSER_GHCR_REGISTRY: ${{ vars.EASYBROWSER_GHCR_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pyyaml
+          python scripts/materialize-action-config.py \
+            --base-config config.example.yaml \
+            --output config.yaml
+
+      - name: Resolve Release Metadata
+        id: release_meta
+        env:
+          EASYBROWSER_GHCR_IMAGE_NAME: ${{ vars.EASYBROWSER_GHCR_IMAGE_NAME }}
+          EASYBROWSER_GHCR_NAMESPACE: ${{ vars.EASYBROWSER_GHCR_NAMESPACE }}
+          EASYBROWSER_GHCR_REGISTRY: ${{ vars.EASYBROWSER_GHCR_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          short_sha="$(git rev-parse --short HEAD)"
+          registry="${DEFAULT_REGISTRY}"
+          if [[ -n "${EASYBROWSER_GHCR_REGISTRY:-}" ]]; then
+            registry="${EASYBROWSER_GHCR_REGISTRY}"
+          fi
+          namespace="${owner}"
+          if [[ -n "${EASYBROWSER_GHCR_NAMESPACE:-}" ]]; then
+            namespace="${EASYBROWSER_GHCR_NAMESPACE}"
+          fi
+          image_name="${DEFAULT_IMAGE_NAME}"
+          if [[ -n "${EASYBROWSER_GHCR_IMAGE_NAME:-}" ]]; then
+            image_name="${EASYBROWSER_GHCR_IMAGE_NAME}"
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            version="${GITHUB_REF_NAME}"
+            push_latest="true"
+            run_smoke="true"
+            platform="linux/amd64"
+          else
+            version="${{ inputs.version }}"
+            if [[ -z "${version}" ]]; then
+              version="release-$(date -u +%Y%m%d)-$(printf '%03d' "${GITHUB_RUN_NUMBER}")"
+            fi
+            push_latest="${{ inputs.push_latest }}"
+            run_smoke="${{ inputs.run_smoke }}"
+            platform="${{ inputs.platform }}"
+          fi
+
+          image_ref="${registry}/${namespace}/${image_name}"
+          smoke_image="${image_ref}:smoke-${GITHUB_RUN_ID}"
+
+          {
+            echo "registry=${registry}"
+            echo "version=${version}"
+            echo "platform=${platform}"
+            echo "image_ref=${image_ref}"
+            echo "smoke_image=${smoke_image}"
+            echo "push_latest=${push_latest}"
+            echo "run_smoke=${run_smoke}"
+            echo "tags<<EOF"
+            echo "${image_ref}:${version}"
+            echo "${image_ref}:sha-${short_sha}"
+            if [[ "${push_latest}" == "true" ]]; then
+              echo "${image_ref}:latest"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate Release Tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate-release-tag.py \
+            --mode service-base \
+            --tag "${{ steps.release_meta.outputs.version }}"
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Smoke Image
+        if: steps.release_meta.outputs.run_smoke == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/service/base/Dockerfile
+          load: true
+          platforms: linux/amd64
+          tags: ${{ steps.release_meta.outputs.smoke_image }}
+
+      - name: Run Smoke Check
+        if: steps.release_meta.outputs.run_smoke == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cid="$(docker run -d -p 18080:18080 "${{ steps.release_meta.outputs.smoke_image }}")"
+          cleanup() {
+            docker rm -f "${cid}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/healthz >/tmp/easybrowser-health.json; then
+              cat /tmp/easybrowser-health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Smoke check failed"
+          docker logs "${cid}" || true
+          exit 1
+
+      - name: Log In To GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.release_meta.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/service/base/Dockerfile
+          platforms: ${{ steps.release_meta.outputs.platform }}
+          push: true
+          tags: ${{ steps.release_meta.outputs.tags }}

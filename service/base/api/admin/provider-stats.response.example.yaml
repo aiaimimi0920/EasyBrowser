@@ -1,0 +1,23 @@
+# GET /admin/stats/providers response draft
+
+success: true
+code: "provider_stats"
+message: ""
+
+data:
+  providers:
+    - provider_id: "chrome"
+      total_requests: 100
+      total_successes: 95
+      total_failures: 5
+      cooldown_count: 1
+      recent_failures: 1
+      error_counts:
+        execution: 3
+        transport: 2
+      last_error: "dispatch timeout"
+      last_failure_at: "2026-03-31T00:10:00Z"
+      last_success_at: "2026-03-31T00:09:00Z"
+      cooldown_until: ""
+
+trace: {}

@@ -1,0 +1,29 @@
+# EasyBrowser public execute request skeleton
+
+request_id: ""
+mode: "strategy" # strategy | direct
+
+target:
+  provider: ""          # required for direct mode
+  allowed_providers: [] # optional for strategy mode
+  strategy_profile: ""
+
+operation:
+  kind: ""              # navigate | script | task | other future kinds
+  payload: {}
+
+timeout:
+  total_ms: 0
+  startup_ms: 0
+
+retry:
+  allow_retry: false
+  max_attempts: 0
+
+isolation:
+  require_separate_process: true
+  runtime_reuse: "prefer_reuse" # prefer_reuse | require_fresh | force_fresh
+
+metadata:
+  caller: ""
+  tags: []

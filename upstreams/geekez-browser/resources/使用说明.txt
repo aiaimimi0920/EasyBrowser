@@ -1,0 +1,35 @@
+IMPORTANT: What if "App is damaged" appears?
+==================================================
+
+MacOS Gatekeeper security mechanism may block unsigned apps (downloaded from GitHub).
+
+✅ Solution:
+
+1. First, drag the "GeekEZ Browser" app into the 【Applications】 folder on the right.
+
+2. Open Terminal (cmd+space, type "Terminal"), copy the following command and press Enter:
+   (Your password will not be shown when typing, just type it and press Enter)
+   
+   sudo xattr -rd com.apple.quarantine /Applications/GeekEZ\ Browser.app
+
+3. Done! You can now launch the app from Launchpad.
+
+
+--------------------------------------------------
+
+
+【重要】安装遇到“文件已损坏”怎么办？
+==================================================
+
+macOS 的 Gatekeeper 安全机制可能会拦截未签名的应用（GitHub 下载的软件通常如此）。
+
+✅ 解决方案:
+
+1. 务必先将 "GeekEZ Browser" 拖入右侧的 【Applications】 文件夹中。
+
+2. 打开终端 (Terminal)，复制以下命令并回车运行：
+   (输入密码时不会显示字符，输完直接回车即可)
+   
+   sudo xattr -rd com.apple.quarantine /Applications/GeekEZ\ Browser.app
+
+3. 完成！现在可以在启动台正常打开软件了。

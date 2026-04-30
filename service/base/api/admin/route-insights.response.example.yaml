@@ -1,0 +1,46 @@
+# GET /admin/routes/insights response draft
+
+success: true
+code: "route_insights"
+message: ""
+
+data:
+  providers:
+    - provider_id: "chrome"
+      selected_count: 7
+      fallback_selected_count: 2
+      succeeded_count: 7
+      failed_count: 0
+      rejection_counts:
+        disabled: 1
+      event_counts:
+        route_selected: 7
+        route_fallback: 2
+
+    - provider_id: "camoufox"
+      selected_count: 3
+      fallback_selected_count: 0
+      succeeded_count: 3
+      failed_count: 0
+      rejection_counts:
+        disabled: 2
+
+  profiles:
+    - strategy_profile: "stealth-first"
+      total_routes: 3
+      fallback_routes: 1
+      succeeded_count: 3
+      failed_count: 0
+      provider_selections:
+        chrome: 1
+        camoufox: 2
+
+    - strategy_profile: "chrome-first"
+      total_routes: 4
+      fallback_routes: 0
+      succeeded_count: 4
+      failed_count: 0
+      provider_selections:
+        chrome: 4
+
+trace: {}

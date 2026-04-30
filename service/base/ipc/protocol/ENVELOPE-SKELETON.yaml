@@ -1,0 +1,15 @@
+# EasyBrowser IPC envelope skeleton
+
+id: ""
+kind: ""          # request | response | event | heartbeat | error
+action: ""
+timestamp: ""
+
+trace:
+  task_id: ""
+  runtime_id: ""
+  provider_id: ""
+
+payload: {}
+
+error: null

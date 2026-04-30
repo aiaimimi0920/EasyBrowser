@@ -1,0 +1,69 @@
+# GET /admin/routes/insights/windows response draft
+
+success: true
+code: "route_window_insights"
+message: ""
+
+data:
+  windows:
+    - window: "10m"
+      since: "2026-04-01T00:00:00Z"
+      providers:
+        - provider_id: "chrome"
+          selected_count: 2
+          fallback_selected_count: 1
+          succeeded_count: 2
+          failed_count: 0
+          rejection_counts:
+            cooldown_active: 1
+          event_counts:
+            route_selected: 2
+            route_fallback: 1
+          last_selected_at: "2026-04-01T00:08:00Z"
+        - provider_id: "camoufox"
+          selected_count: 1
+          fallback_selected_count: 0
+          succeeded_count: 1
+          failed_count: 0
+          rejection_counts:
+            disabled: 1
+          event_counts:
+            provider_disabled: 1
+            provider_enabled: 1
+          last_selected_at: "2026-04-01T00:07:00Z"
+      profiles:
+        - strategy_profile: "stealth-first"
+          total_routes: 2
+          fallback_routes: 1
+          succeeded_count: 2
+          failed_count: 0
+          provider_selections:
+            chrome: 1
+            camoufox: 1
+        - strategy_profile: "chrome-first"
+          total_routes: 1
+          fallback_routes: 0
+          succeeded_count: 1
+          failed_count: 0
+          provider_selections:
+            chrome: 1
+
+    - window: "1h"
+      since: "2026-03-31T23:10:00Z"
+      providers:
+        - provider_id: "chrome"
+          selected_count: 5
+          fallback_selected_count: 2
+          succeeded_count: 5
+          failed_count: 0
+      profiles:
+        - strategy_profile: "stealth-first"
+          total_routes: 3
+          fallback_routes: 1
+          succeeded_count: 3
+          failed_count: 0
+          provider_selections:
+            chrome: 1
+            camoufox: 2
+
+trace: {}

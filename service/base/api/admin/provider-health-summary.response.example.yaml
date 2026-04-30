@@ -1,0 +1,70 @@
+# GET /admin/providers/health-summary response draft
+
+success: true
+code: "provider_health_summary"
+message: ""
+
+data:
+  providers:
+    - provider_id: "chrome"
+      enabled: true
+      healthy: true
+      cooldown_active: false
+      failure_count: 1
+      last_error: "dispatch failed"
+      last_failure_at: "2026-03-31T23:59:00Z"
+      last_success_at: "2026-04-01T00:00:05Z"
+      total_task_succeeded_count: 8
+      total_task_failed_count: 2
+      total_task_cancelled_count: 1
+      total_spawn_started_count: 3
+      total_startup_failed_count: 1
+      total_ready_timeout_count: 1
+      total_heartbeat_missed_count: 1
+      total_heartbeat_restored_count: 1
+      total_health_degraded_count: 1
+      windows:
+        - window: "10m"
+          since: "2026-03-31T23:50:00Z"
+          task_succeeded_count: 3
+          task_failed_count: 1
+          task_cancelled_count: 0
+          spawn_started_count: 1
+          startup_failed_count: 0
+          ready_timeout_count: 0
+          heartbeat_missed_count: 0
+          heartbeat_restored_count: 0
+          health_degraded_count: 0
+          success_rate: 0.75
+          failure_rate: 0.25
+
+    - provider_id: "camoufox"
+      enabled: true
+      healthy: true
+      cooldown_active: false
+      failure_count: 0
+      total_task_succeeded_count: 5
+      total_task_failed_count: 0
+      total_task_cancelled_count: 0
+      total_spawn_started_count: 2
+      total_startup_failed_count: 0
+      total_ready_timeout_count: 0
+      total_heartbeat_missed_count: 0
+      total_heartbeat_restored_count: 0
+      total_health_degraded_count: 0
+      windows:
+        - window: "10m"
+          since: "2026-03-31T23:50:00Z"
+          task_succeeded_count: 2
+          task_failed_count: 0
+          task_cancelled_count: 0
+          spawn_started_count: 1
+          startup_failed_count: 0
+          ready_timeout_count: 0
+          heartbeat_missed_count: 0
+          heartbeat_restored_count: 0
+          health_degraded_count: 0
+          success_rate: 1.0
+          failure_rate: 0.0
+
+trace: {}

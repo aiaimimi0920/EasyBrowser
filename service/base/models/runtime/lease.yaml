@@ -1,0 +1,14 @@
+# Runtime lease skeleton
+
+lease_id: ""
+runtime_id: ""
+task_id: ""
+
+ownership:
+  mode: "exclusive" # exclusive | shared (if ever allowed later)
+  created_at: ""
+  expires_at: ""
+
+release:
+  released_at: ""
+  release_reason: ""

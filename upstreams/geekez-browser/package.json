@@ -1,0 +1,136 @@
+{
+  "name": "geekez-browser",
+  "version": "1.5.1",
+  "description": "Stealthy Anti-Detect Browser for E-Commerce",
+  "main": "out/main/index.js",
+  "author": "EchoHS",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "postinstall": "node setup.js",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.geekez.browser",
+    "productName": "GeekEZ Browser",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.ts",
+      "!*.map",
+      "!package-lock.json",
+      "!dist",
+      "!_Trash_Bin",
+      "!release"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/puppeteer",
+        "to": "puppeteer",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/logo.ico",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "src/renderer/icon.png"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 270,
+          "y": 100,
+          "type": "file",
+          "path": "resources/使用说明.txt"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "src/renderer/icon.png"
+    }
+  },
+  "dependencies": {
+    "@puppeteer/browsers": "^2.13.0",
+    "adm-zip": "^0.5.17",
+    "fs-extra": "^11.3.4",
+    "get-port": "^7.2.0",
+    "js-base64": "^3.7.8",
+    "js-yaml": "^4.1.1",
+    "pinia": "^3.0.4",
+    "puppeteer": "^24.40.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "socks-proxy-agent": "^10.0.0",
+    "sql.js": "^1.14.1",
+    "tcp-ping": "^0.1.1",
+    "tree-kill": "^1.2.2",
+    "uuid": "^13.0.0",
+    "vue": "^3.5.31"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.5",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "vite": "^7.3.1"
+  },
+  "puppeteer": {
+    "skipDownload": true,
+    "skipFirefoxDownload": true
+  }
+}

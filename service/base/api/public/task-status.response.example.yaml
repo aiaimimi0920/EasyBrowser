@@ -1,0 +1,106 @@
+# GET /v1/tasks/:taskId response draft
+
+success: true
+code: "task_status"
+message: ""
+
+data:
+  task_id: "task-demo-001"
+  state: "running"
+  mode: "strategy"
+
+  route:
+    strategy_profile: "latency-first"
+    selected_provider: "chrome"
+    runtime_id: "rt-chrome-001"
+    strategy_reason: "strategy selected provider=chrome profile=latency-first action=open_resource class=generic resource_kind=page runtime_reuse=prefer_reuse fallback_used=false profile_rank=0 score=300 ready_runtimes=1 recent_failures=0 total_failures=0"
+    diagnostics:
+      action: "open_resource"
+      action_class: "generic"
+      resource_kind: "page"
+      runtime_reuse: "prefer_reuse"
+      profile: "latency-first"
+      profile_rank: 0
+      score: 300
+      ready_runtimes: 1
+      recent_failures: 0
+      total_failures: 0
+      breakdown:
+        base_score: 110
+        profile_bonus: 30
+        reuse_bonus: 120
+        ready_runtime_bonus: 80
+    candidates:
+      - provider_id: "chrome"
+        eligible: true
+        selected: true
+        profile_rank: 0
+        score: 300
+        ready_runtimes: 1
+        recent_failures: 0
+        total_failures: 0
+        supports_action: true
+        supports_mode: true
+        provider_enabled: true
+        breakdown:
+          base_score: 110
+          profile_bonus: 30
+          reuse_bonus: 120
+          ready_runtime_bonus: 80
+      - provider_id: "camoufox"
+        eligible: true
+        profile_rank: 0
+        score: 180
+        ready_runtimes: 0
+        recent_failures: 0
+        total_failures: 0
+        supports_action: true
+        supports_mode: true
+        provider_enabled: true
+        breakdown:
+          base_score: 110
+          profile_bonus: 30
+          reuse_bonus: 0
+          ready_runtime_bonus: 0
+      - provider_id: "browserbase"
+        eligible: false
+        rejection_reason: "unsupported_action"
+        supports_mode: true
+
+  timing:
+    queued_at: "2026-03-31T00:00:00Z"
+    started_at: "2026-03-31T00:00:05Z"
+    finished_at: ""
+
+  result:
+    action: "open_resource"
+    provider_id: "chrome"
+    runtime_id: "rt-chrome-001"
+    resource_kind: "page"
+    resource_id: "page-123"
+
+    resource:
+      id: "page-123"
+      kind: "page"
+      status: "open"
+      title: "Example Domain"
+      url: "https://example.com/"
+      attributes:
+        type: "page"
+
+    metadata:
+      browser_kind: "chrome"
+      browser_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      debug_port: 9222
+
+    provider_response:
+      id: "page-123"
+      title: "Example Domain"
+      url: "https://example.com/"
+      type: "page"
+
+  error: null
+
+trace:
+  request_id: "req-demo-001"
+  task_id: "task-demo-001"

@@ -1,0 +1,16 @@
+# GET /admin/routes/rejections response draft
+
+success: true
+code: "route_rejections"
+message: ""
+
+data:
+  rejections:
+    - provider_id: "browserbase"
+      rejection_reason: "unsupported_action"
+      count: 12
+    - provider_id: "camoufox"
+      rejection_reason: "disabled"
+      count: 3
+
+trace: {}

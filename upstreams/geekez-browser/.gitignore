@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+userData/
+BrowserProfiles/
+_Trash_Bin/
+.env
+.DS_Store
+Thumbs.db
+resources/bin/
+resources/puppeteer/
+website/
+tools/
+out/
+*.log
+*.exe

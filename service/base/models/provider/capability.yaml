@@ -1,0 +1,19 @@
+# Provider capability skeleton
+
+provider_id: ""
+kind: "" # chrome | camoufox | browserbase
+enabled: true
+
+capabilities:
+  supports_direct_mode: true
+  supports_strategy_mode: true
+  supports_fresh_runtime: true
+  supports_runtime_reuse: true
+  supports_remote_execution: false
+  supports_local_process: false
+
+limits:
+  max_runtimes: 0
+  max_parallel_tasks: 0
+
+notes: ""

@@ -1,0 +1,22 @@
+# GET /admin/stats/runtimes response draft
+
+success: true
+code: "runtime_stats"
+message: ""
+
+data:
+  runtimes:
+    - runtime_id: "rt-chrome-001"
+      provider_id: "chrome"
+      total_leases: 20
+      restart_count: 1
+      abnormal_exit_count: 0
+      recent_failures: 0
+      error_counts:
+        execution: 1
+      last_error: ""
+      last_failure_at: ""
+      last_success_at: "2026-03-31T00:09:00Z"
+      cooldown_until: ""
+
+trace: {}

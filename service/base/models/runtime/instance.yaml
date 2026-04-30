@@ -1,0 +1,17 @@
+# Runtime instance skeleton
+
+runtime_id: ""
+provider_id: ""
+state: "created"
+
+process:
+  pid: 0
+  started_at: ""
+
+health:
+  healthy: false
+  last_heartbeat_at: ""
+
+lease:
+  current_task_id: ""
+  leased_until: ""

@@ -1,0 +1,12 @@
+# Provider error skeleton
+
+provider_id: ""
+runtime_id: ""
+
+error:
+  category: ""     # spawn | startup | timeout | execution | transport | provider
+  code: ""
+  message: ""
+  retriable: false
+  cooldown_candidate: false
+  raw: {}
