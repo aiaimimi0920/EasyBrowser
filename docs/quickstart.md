@@ -72,3 +72,25 @@ npm install
 
 The upstream `setup.js` flow downloads the required runtime assets into the
 ignored local directories.
+
+## Import Code Bootstrap
+
+If you want to use the R2-backed distribution flow:
+
+1. Generate an owner keypair:
+
+```powershell
+.\scripts\generate-import-code-keypair.ps1
+```
+
+2. Store the generated public key in the repository secret
+   `EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY`.
+3. After a release publish run, download the encrypted import-code artifact and
+   decrypt it locally:
+
+```powershell
+.\scripts\decrypt-import-code.ps1 `
+  -EncryptedFilePath .\easybrowser-import-code.encrypted.json `
+  -PrivateKeyPath .\.runtime-keys\easybrowser_import_code_owner_private.txt `
+  -ImportCodeOnly
+```

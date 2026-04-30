@@ -60,6 +60,20 @@ jobs:
         env:
           EASYBROWSER_SERVICE_LISTEN: ${{ secrets.EASYBROWSER_SERVICE_LISTEN }}
           EASYBROWSER_CHROME_HEADLESS: ${{ secrets.EASYBROWSER_CHROME_HEADLESS }}
+          EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER: ${{ secrets.EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER }}
+          EASYBROWSER_CHROME_BINARY_PATH: ${{ secrets.EASYBROWSER_CHROME_BINARY_PATH }}
+          EASYBROWSER_CHROMEDRIVER_PATH: ${{ secrets.EASYBROWSER_CHROMEDRIVER_PATH }}
+          EASYBROWSER_CHROME_PYTHON: ${{ secrets.EASYBROWSER_CHROME_PYTHON }}
+          EASYBROWSER_CAMOUFOX_PYTHON: ${{ secrets.EASYBROWSER_CAMOUFOX_PYTHON }}
+          EASYBROWSER_CAMOUFOX_HEADLESS: ${{ secrets.EASYBROWSER_CAMOUFOX_HEADLESS }}
+          EASYBROWSER_CAMOUFOX_OS: ${{ secrets.EASYBROWSER_CAMOUFOX_OS }}
+          EASYBROWSER_CAMOUFOX_READY_TIMEOUT_MS: ${{ secrets.EASYBROWSER_CAMOUFOX_READY_TIMEOUT_MS }}
+          EASYBROWSER_GEEKEZ_PYTHON: ${{ secrets.EASYBROWSER_GEEKEZ_PYTHON }}
+          EASYBROWSER_GEEKEZ_READY_TIMEOUT_MS: ${{ secrets.EASYBROWSER_GEEKEZ_READY_TIMEOUT_MS }}
+          EASYBROWSER_BROWSERBASE_API_KEY: ${{ secrets.EASYBROWSER_BROWSERBASE_API_KEY }}
+          EASYBROWSER_BROWSERBASE_PROJECT_ID: ${{ secrets.EASYBROWSER_BROWSERBASE_PROJECT_ID }}
+          EASYBROWSER_IMPORT_CODE_SYNC_ENABLED: ${{ secrets.EASYBROWSER_IMPORT_CODE_SYNC_ENABLED }}
+          EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS: ${{ secrets.EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS }}
           EASYBROWSER_GHCR_IMAGE_NAME: ${{ vars.EASYBROWSER_GHCR_IMAGE_NAME }}
           EASYBROWSER_GHCR_NAMESPACE: ${{ vars.EASYBROWSER_GHCR_NAMESPACE }}
           EASYBROWSER_GHCR_REGISTRY: ${{ vars.EASYBROWSER_GHCR_REGISTRY }}
@@ -181,6 +195,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish Image
+        id: publish_image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -188,3 +203,165 @@ jobs:
           platforms: ${{ steps.release_meta.outputs.platform }}
           push: true
           tags: ${{ steps.release_meta.outputs.tags }}
+
+      - name: Resolve Distribution Secret Availability
+        id: distribution_gate
+        env:
+          EASYBROWSER_R2_CONFIG_ACCOUNT_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_ACCOUNT_ID }}
+          EASYBROWSER_R2_CONFIG_BUCKET: ${{ secrets.EASYBROWSER_R2_CONFIG_BUCKET }}
+          EASYBROWSER_R2_CONFIG_ENDPOINT: ${{ secrets.EASYBROWSER_R2_CONFIG_ENDPOINT }}
+          EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID }}
+          EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY }}
+          EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID }}
+          EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY }}
+          EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY: ${{ secrets.EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          r2_enabled=true
+          for name in \
+            EASYBROWSER_R2_CONFIG_ACCOUNT_ID \
+            EASYBROWSER_R2_CONFIG_BUCKET \
+            EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY \
+            EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY \
+            EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY \
+            EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID \
+            EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY
+          do
+            if [[ -z "${!name:-}" ]]; then
+              r2_enabled=false
+            fi
+          done
+
+          import_enabled=false
+          if [[ "${r2_enabled}" == "true" ]] \
+            && [[ -n "${EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID:-}" ]] \
+            && [[ -n "${EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY:-}" ]] \
+            && [[ -n "${EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY:-}" ]]; then
+            import_enabled=true
+          fi
+
+          {
+            echo "r2_enabled=${r2_enabled}"
+            echo "import_enabled=${import_enabled}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload Service Base Runtime Config To R2
+        if: steps.distribution_gate.outputs.r2_enabled == 'true'
+        id: runtime_config_upload
+        env:
+          EASYBROWSER_R2_CONFIG_ACCOUNT_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_ACCOUNT_ID }}
+          EASYBROWSER_R2_CONFIG_BUCKET: ${{ secrets.EASYBROWSER_R2_CONFIG_BUCKET }}
+          EASYBROWSER_R2_CONFIG_ENDPOINT: ${{ secrets.EASYBROWSER_R2_CONFIG_ENDPOINT }}
+          EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID }}
+          EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY }}
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check boto3 pyyaml
+
+          foreach ($name in @(
+            'EASYBROWSER_R2_CONFIG_ACCOUNT_ID',
+            'EASYBROWSER_R2_CONFIG_BUCKET',
+            'EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY',
+            'EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY',
+            'EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY',
+            'EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID',
+            'EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY'
+          )) {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Item "Env:$name").Value)) {
+              throw "Missing required R2 config secret: $name"
+            }
+          }
+
+          $manifestPath = Join-Path $PWD 'easybrowser-r2-config-manifest.json'
+          .\scripts\upload-service-base-r2-config.ps1 `
+            -ConfigPath .\config.yaml `
+            -AccountId $env:EASYBROWSER_R2_CONFIG_ACCOUNT_ID `
+            -Bucket $env:EASYBROWSER_R2_CONFIG_BUCKET `
+            -AccessKeyId $env:EASYBROWSER_R2_CONFIG_UPLOAD_ACCESS_KEY_ID `
+            -SecretAccessKey $env:EASYBROWSER_R2_CONFIG_UPLOAD_SECRET_ACCESS_KEY `
+            -ConfigObjectKey $env:EASYBROWSER_R2_CONFIG_CONFIG_OBJECT_KEY `
+            -RuntimeEnvObjectKey $env:EASYBROWSER_R2_CONFIG_ENV_OBJECT_KEY `
+            -ManifestObjectKey $env:EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY `
+            -Endpoint $env:EASYBROWSER_R2_CONFIG_ENDPOINT `
+            -ReleaseVersion '${{ steps.release_meta.outputs.version }}' `
+            -ImageRef '${{ steps.release_meta.outputs.image_ref }}' `
+            -ManifestOutput $manifestPath
+
+          "path=$manifestPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Distribution Manifest Artifact
+        if: steps.distribution_gate.outputs.r2_enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: easybrowser-r2-manifest
+          path: ${{ steps.runtime_config_upload.outputs.path }}
+          if-no-files-found: error
+
+      - name: Generate Encrypted Owner Import Code
+        if: steps.distribution_gate.outputs.import_enabled == 'true'
+        id: import_code
+        env:
+          EASYBROWSER_R2_CONFIG_ACCOUNT_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_ACCOUNT_ID }}
+          EASYBROWSER_R2_CONFIG_BUCKET: ${{ secrets.EASYBROWSER_R2_CONFIG_BUCKET }}
+          EASYBROWSER_R2_CONFIG_ENDPOINT: ${{ secrets.EASYBROWSER_R2_CONFIG_ENDPOINT }}
+          EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY }}
+          EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID: ${{ secrets.EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID }}
+          EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY: ${{ secrets.EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY }}
+          EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY: ${{ secrets.EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY }}
+          EASYBROWSER_IMPORT_CODE_SYNC_ENABLED: ${{ secrets.EASYBROWSER_IMPORT_CODE_SYNC_ENABLED }}
+          EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS: ${{ secrets.EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python -m pip install --disable-pip-version-check pynacl
+
+          sync_flag="--sync-enabled"
+          if [[ -n "${EASYBROWSER_IMPORT_CODE_SYNC_ENABLED:-}" ]]; then
+            normalized="$(echo "${EASYBROWSER_IMPORT_CODE_SYNC_ENABLED}" | tr '[:upper:]' '[:lower:]')"
+            if [[ "${normalized}" == "0" || "${normalized}" == "false" || "${normalized}" == "no" || "${normalized}" == "off" ]]; then
+              sync_flag="--no-sync-enabled"
+            fi
+          fi
+          sync_interval=7200
+          if [[ -n "${EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS:-}" ]]; then
+            sync_interval="${EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS}"
+          fi
+
+          python scripts/easybrowser-import-code.py encode \
+            --account-id "${EASYBROWSER_R2_CONFIG_ACCOUNT_ID}" \
+            --bucket "${EASYBROWSER_R2_CONFIG_BUCKET}" \
+            --manifest-object-key "${EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY}" \
+            --access-key-id "${EASYBROWSER_R2_CONFIG_READ_ACCESS_KEY_ID}" \
+            --secret-access-key "${EASYBROWSER_R2_CONFIG_READ_SECRET_ACCESS_KEY}" \
+            --endpoint "${EASYBROWSER_R2_CONFIG_ENDPOINT}" \
+            "${sync_flag}" \
+            --sync-interval-seconds "${sync_interval}" \
+            --release-version "${{ steps.release_meta.outputs.version }}" \
+            --json-output \
+            --output easybrowser-import-code.bundle.json
+
+          python scripts/easybrowser-import-code.py encrypt \
+            --bundle-file easybrowser-import-code.bundle.json \
+            --public-key "${EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY}" \
+            --metadata-json "{\"releaseVersion\":\"${{ steps.release_meta.outputs.version }}\",\"imageRef\":\"${{ steps.release_meta.outputs.image_ref }}\",\"manifestObjectKey\":\"${EASYBROWSER_R2_CONFIG_MANIFEST_OBJECT_KEY}\"}" \
+            --output easybrowser-import-code.encrypted.json
+
+          echo "bundle_path=easybrowser-import-code.bundle.json" >> "${GITHUB_OUTPUT}"
+          echo "encrypted_path=easybrowser-import-code.encrypted.json" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload Encrypted Import Code Artifact
+        if: steps.distribution_gate.outputs.import_enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: easybrowser-import-code-encrypted
+          path: ${{ steps.import_code.outputs.encrypted_path }}
+          if-no-files-found: error

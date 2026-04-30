@@ -35,9 +35,23 @@ def build_overlay() -> dict[str, Any]:
 
     service_listen = os.environ.get("EASYBROWSER_SERVICE_LISTEN", "").strip()
     chrome_headless = os.environ.get("EASYBROWSER_CHROME_HEADLESS", "").strip()
+    chrome_uc = os.environ.get("EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER", "").strip()
+    chrome_binary_path = os.environ.get("EASYBROWSER_CHROME_BINARY_PATH", "").strip()
+    chromedriver_path = os.environ.get("EASYBROWSER_CHROMEDRIVER_PATH", "").strip()
+    chrome_python_path = os.environ.get("EASYBROWSER_CHROME_PYTHON", "").strip()
+    camoufox_python_path = os.environ.get("EASYBROWSER_CAMOUFOX_PYTHON", "").strip()
+    camoufox_headless = os.environ.get("EASYBROWSER_CAMOUFOX_HEADLESS", "").strip()
+    camoufox_os = os.environ.get("EASYBROWSER_CAMOUFOX_OS", "").strip()
+    camoufox_ready_timeout = os.environ.get("EASYBROWSER_CAMOUFOX_READY_TIMEOUT_MS", "").strip()
+    geekez_python_path = os.environ.get("EASYBROWSER_GEEKEZ_PYTHON", "").strip()
+    geekez_ready_timeout = os.environ.get("EASYBROWSER_GEEKEZ_READY_TIMEOUT_MS", "").strip()
+    browserbase_api_key = os.environ.get("EASYBROWSER_BROWSERBASE_API_KEY", "").strip()
+    browserbase_project_id = os.environ.get("EASYBROWSER_BROWSERBASE_PROJECT_ID", "").strip()
     ghcr_image_name = os.environ.get("EASYBROWSER_GHCR_IMAGE_NAME", "").strip()
     ghcr_namespace = os.environ.get("EASYBROWSER_GHCR_NAMESPACE", "").strip()
     ghcr_registry = os.environ.get("EASYBROWSER_GHCR_REGISTRY", "").strip()
+    import_sync_enabled = os.environ.get("EASYBROWSER_IMPORT_CODE_SYNC_ENABLED", "").strip()
+    import_sync_interval = os.environ.get("EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS", "").strip()
 
     if service_listen:
         overlay.setdefault("serviceBase", {}).setdefault("runtime", {})["listen"] = service_listen
@@ -52,12 +66,77 @@ def build_overlay() -> dict[str, Any]:
             raise SystemExit("EASYBROWSER_CHROME_HEADLESS must be boolean-like")
         overlay.setdefault("chromeRuntime", {})["headless"] = value
 
+    if chrome_uc:
+        normalized = chrome_uc.lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            value = True
+        elif normalized in {"0", "false", "no", "off"}:
+            value = False
+        else:
+            raise SystemExit("EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER must be boolean-like")
+        overlay.setdefault("chromeRuntime", {})["useUndetectedChromedriver"] = value
+
+    if chrome_binary_path:
+        overlay.setdefault("chromeRuntime", {})["binaryPath"] = chrome_binary_path
+    if chromedriver_path:
+        overlay.setdefault("chromeRuntime", {})["chromedriverPath"] = chromedriver_path
+    if chrome_python_path:
+        overlay.setdefault("chromeRuntime", {})["pythonPath"] = chrome_python_path
+
+    if camoufox_python_path:
+        overlay.setdefault("camoufoxRuntime", {})["pythonPath"] = camoufox_python_path
+    if camoufox_os:
+        overlay.setdefault("camoufoxRuntime", {})["os"] = camoufox_os
+    if camoufox_ready_timeout:
+        try:
+            overlay.setdefault("camoufoxRuntime", {})["readyTimeoutMs"] = int(camoufox_ready_timeout)
+        except ValueError as exc:
+            raise SystemExit("EASYBROWSER_CAMOUFOX_READY_TIMEOUT_MS must be an integer") from exc
+    if camoufox_headless:
+        normalized = camoufox_headless.lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            value = True
+        elif normalized in {"0", "false", "no", "off"}:
+            value = False
+        else:
+            raise SystemExit("EASYBROWSER_CAMOUFOX_HEADLESS must be boolean-like")
+        overlay.setdefault("camoufoxRuntime", {})["headless"] = value
+
+    if geekez_python_path:
+        overlay.setdefault("geekezRuntime", {})["pythonPath"] = geekez_python_path
+    if geekez_ready_timeout:
+        try:
+            overlay.setdefault("geekezRuntime", {})["readyTimeoutMs"] = int(geekez_ready_timeout)
+        except ValueError as exc:
+            raise SystemExit("EASYBROWSER_GEEKEZ_READY_TIMEOUT_MS must be an integer") from exc
+
+    if browserbase_api_key:
+        overlay.setdefault("browserbase", {})["apiKey"] = browserbase_api_key
+    if browserbase_project_id:
+        overlay.setdefault("browserbase", {})["projectId"] = browserbase_project_id
+
     if ghcr_image_name:
         overlay.setdefault("publishing", {}).setdefault("ghcr", {})["imageName"] = ghcr_image_name
     if ghcr_namespace:
         overlay.setdefault("publishing", {}).setdefault("ghcr", {})["namespace"] = ghcr_namespace
     if ghcr_registry:
         overlay.setdefault("publishing", {}).setdefault("ghcr", {})["registry"] = ghcr_registry
+
+    if import_sync_enabled:
+        normalized = import_sync_enabled.lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            value = True
+        elif normalized in {"0", "false", "no", "off"}:
+            value = False
+        else:
+            raise SystemExit("EASYBROWSER_IMPORT_CODE_SYNC_ENABLED must be boolean-like")
+        overlay.setdefault("publishing", {}).setdefault("importCode", {})["syncEnabled"] = value
+
+    if import_sync_interval:
+        try:
+            overlay.setdefault("publishing", {}).setdefault("importCode", {})["syncIntervalSeconds"] = int(import_sync_interval)
+        except ValueError as exc:
+            raise SystemExit("EASYBROWSER_IMPORT_CODE_SYNC_INTERVAL_SECONDS must be an integer") from exc
 
     return overlay
 

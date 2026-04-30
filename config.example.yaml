@@ -9,9 +9,30 @@ serviceBase:
 
 chromeRuntime:
   headless: true
+  useUndetectedChromedriver: false
+  binaryPath: ""
+  chromedriverPath: ""
+  pythonPath: ""
+
+camoufoxRuntime:
+  pythonPath: ""
+  headless: true
+  os: "windows"
+  readyTimeoutMs: 75000
+
+geekezRuntime:
+  pythonPath: ""
+  readyTimeoutMs: 90000
+
+browserbase:
+  apiKey: ""
+  projectId: ""
 
 publishing:
   ghcr:
     registry: "ghcr.io"
     namespace: ""
     imageName: "easybrowser-service"
+  importCode:
+    syncEnabled: true
+    syncIntervalSeconds: 7200

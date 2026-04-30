@@ -81,3 +81,13 @@ These are migration outputs, not source omissions.
 No unexpected omissions were found in the imported mapping covered by this
 public-repo migration pass. Differences between source and target are limited to
 the intentional sanitization and public-repository additions documented above.
+
+## Post-Migration Distribution Additions
+
+The public monorepo now also includes target-only hosted distribution logic that
+did not exist in the original source workspace:
+
+- GitHub Secrets-driven config materialization overlays
+- private R2 runtime-config upload scripts
+- EasyBrowser import-code encode/encrypt/decrypt tooling
+- optional local bootstrap JSON generation for R2-backed runtime retrieval

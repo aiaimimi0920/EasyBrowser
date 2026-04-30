@@ -34,6 +34,12 @@ Current publish flow:
 3. Validate the release tag
 4. Optionally run a local smoke image build and `/healthz` check
 5. Publish the `service/base` image to GHCR
+6. Optionally upload rendered runtime artifacts to private R2
+7. Optionally generate an encrypted owner-only import-code artifact
+
+The GHCR publish path remains valid even when the R2/import-code secrets are not
+configured. In that case the workflow skips the distribution steps but still
+publishes the image.
 
 ## Current Image Target
 
@@ -50,5 +56,9 @@ Chrome/Camoufox/Geekez runtime subtrees is stabilized.
   present in the repo
 - ensure the repository has the desired owner namespace before publishing GHCR
   tags
+- if using private R2 distribution, ensure all `EASYBROWSER_R2_CONFIG_*`
+  secrets are configured
+- if using encrypted import-code output, ensure
+  `EASYBROWSER_IMPORT_CODE_OWNER_PUBLIC_KEY` is configured
 - push a tag matching `v*`, `release-*`, or `service-base-*`, or trigger the
   publish workflow manually

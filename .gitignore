@@ -1,6 +1,7 @@
 config.yaml
 .tmp/
 .runtime/
+.runtime-keys/
 .playwright-cli/
 .wrangler/
 tmp/
@@ -23,6 +24,9 @@ __pycache__/
 *.exe
 Thumbs.db
 .DS_Store
+*.encrypted.json
+*.bundle.json
+deploy/service/base/bootstrap/*.json
 deploy/**/build-context/
 deploy/**/cloudflare/node_modules/
 deploy/**/cloudflare/.wrangler/
