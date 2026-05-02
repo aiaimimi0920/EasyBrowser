@@ -97,6 +97,20 @@ Responsibilities:
 
 ### 3. Start the service locally
 
+The repository root now includes a host-facing one-click deploy wrapper:
+
+```powershell
+pwsh .\deploy-host.ps1
+```
+
+That root entrypoint does three things in order:
+
+- creates `config.yaml` from `config.example.yaml` when it is missing
+- renders `deploy/service/base/.env.local` from the root config
+- forwards into the existing `scripts/start-service-base.ps1` runtime entry
+
+The lower-level start entrypoint is still available:
+
 ```powershell
 .\scripts\start-service-base.ps1
 ```
@@ -140,6 +154,13 @@ See:
 - `docs/github-actions-secrets.md`
 - `docs/release-workflow.md`
 - `docs/migration-audit.md`
+
+## Root Operator Entry
+
+- `deploy-host.ps1`
+  - repository-root host wrapper for local service deployment
+  - renders the deploy-side `.env.local` from the root `config.yaml`
+  - then starts the control plane through the existing service/base helper
 
 ## Migration Rules
 

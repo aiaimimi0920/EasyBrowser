@@ -36,6 +36,20 @@ Current validation covers:
 
 ## Run The Control Plane
 
+Preferred root entrypoint:
+
+```powershell
+pwsh .\deploy-host.ps1
+```
+
+This host wrapper will:
+
+- create `config.yaml` if it is missing
+- render `deploy/service/base/.env.local` from the root config
+- start the service through the existing `scripts/start-service-base.ps1`
+
+The lower-level start script is still available:
+
 ```powershell
 .\scripts\start-service-base.ps1
 ```
