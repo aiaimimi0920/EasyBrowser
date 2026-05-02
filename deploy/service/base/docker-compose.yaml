@@ -1,10 +1,10 @@
 services:
-  easybrowser-service-base:
+  easy-browser:
     build:
       context: ../../..
       dockerfile: deploy/service/base/Dockerfile
-    image: ${EASYBROWSER_SERVICE_IMAGE:-easybrowser-service:local}
-    container_name: ${EASYBROWSER_SERVICE_CONTAINER_NAME:-easybrowser-service-base}
+    image: ${EASYBROWSER_SERVICE_IMAGE:-easy-browser/easy-browser:local}
+    container_name: ${EASYBROWSER_SERVICE_CONTAINER_NAME:-easy-browser}
     restart: unless-stopped
     env_file:
       - ${EASYBROWSER_SERVICE_ENV_FILE:-./.env.local}
@@ -13,7 +13,7 @@ services:
     networks:
       easybrowser_service_network:
         aliases:
-          - ${EASYBROWSER_SERVICE_NETWORK_ALIAS:-easybrowser-service}
+          - ${EASYBROWSER_SERVICE_NETWORK_ALIAS:-easy-browser}
 
 networks:
   easybrowser_service_network:

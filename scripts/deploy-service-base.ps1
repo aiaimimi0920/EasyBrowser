@@ -8,7 +8,7 @@ param(
     [string]$ContainerName = "",
     [int]$HostPort = 0,
     [string]$NetworkName = "EasyAiMi",
-    [string]$NetworkAlias = "easybrowser-service",
+    [string]$NetworkAlias = "easy-browser",
     [string]$ComposeProjectName = ""
 )
 
@@ -110,13 +110,13 @@ if ($Image -and $Pull) {
 }
 
 $resolvedContainerName = if ([string]::IsNullOrWhiteSpace($ContainerName)) {
-    "easybrowser-service-base"
+    "easy-browser"
 } else {
     $ContainerName
 }
 $resolvedHostPort = if ($HostPort -gt 0) { $HostPort } else { 18080 }
 $resolvedComposeProjectName = if ([string]::IsNullOrWhiteSpace($ComposeProjectName)) {
-    "easybrowser-service-base"
+    "easy-browser"
 } else {
     $ComposeProjectName
 }

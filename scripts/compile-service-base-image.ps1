@@ -1,5 +1,5 @@
 param(
-  [string]$ImageName = 'easybrowser-service:local',
+  [string]$ImageName = 'easy-browser/easy-browser:local',
   [switch]$NoCache
 )
 
