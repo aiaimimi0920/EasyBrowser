@@ -39,7 +39,14 @@ def extract_turnstile_task(driver) -> dict[str, Any] | None:
             if (iframe) {
               try {
                 const src = new URL(iframe.src, window.location.href);
-                const websiteKey = src.searchParams.get('sitekey') || '';
+                let websiteKey = src.searchParams.get('sitekey') || '';
+                if (!websiteKey) {
+                  const pathSegments = src.pathname
+                    .split('/')
+                    .map((segment) => String(segment || '').trim())
+                    .filter(Boolean);
+                  websiteKey = pathSegments.find((segment) => /^0x[0-9A-Za-z_-]{10,}$/.test(segment)) || '';
+                }
                 if (websiteKey) {
                   return {
                     websiteURL: window.location.href,
