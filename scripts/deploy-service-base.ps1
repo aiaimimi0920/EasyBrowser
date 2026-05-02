@@ -51,6 +51,36 @@ function Ensure-DockerNetwork {
     }
 }
 
+function Set-DotEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $prefix = "$Name="
+    $lines = if (Test-Path -LiteralPath $Path) {
+        Get-Content -LiteralPath $Path
+    } else {
+        @()
+    }
+    $updated = $false
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index].StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+            $lines[$index] = "$prefix$Value"
+            $updated = $true
+            break
+        }
+    }
+    if (-not $updated) {
+        $lines += "$prefix$Value"
+    }
+    Set-Content -LiteralPath $Path -Value $lines
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedConfigPath = Resolve-AbsolutePath -Path $ConfigPath -BaseDir $repoRoot
 $composeFile = Resolve-AbsolutePath -Path "deploy\service\base\docker-compose.yaml" -BaseDir $repoRoot
@@ -99,6 +129,8 @@ $env:EASYBROWSER_SERVICE_HOST_PORT = [string]$resolvedHostPort
 $env:EASYBROWSER_SERVICE_ENV_FILE = $serviceEnvPath
 $env:EASYBROWSER_SERVICE_NETWORK = $NetworkName
 $env:EASYBROWSER_SERVICE_NETWORK_ALIAS = $NetworkAlias
+
+Set-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_LISTEN" -Value "0.0.0.0:18080"
 
 Ensure-DockerNetwork -Name $NetworkName
 
