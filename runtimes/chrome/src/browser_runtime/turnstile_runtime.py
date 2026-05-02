@@ -58,6 +58,35 @@ def extract_turnstile_task(driver) -> dict[str, Any] | None:
               } catch (_) {}
             }
 
+            try {
+              const resourceEntries = (window.performance && typeof window.performance.getEntriesByType === 'function')
+                ? window.performance.getEntriesByType('resource')
+                : [];
+              for (const entry of resourceEntries) {
+                const name = String((entry && entry.name) || '');
+                if (!name || name.indexOf('challenges.cloudflare.com') === -1 || name.indexOf('/turnstile/') === -1) {
+                  continue;
+                }
+                const src = new URL(name, window.location.href);
+                let websiteKey = src.searchParams.get('sitekey') || '';
+                if (!websiteKey) {
+                  const pathSegments = src.pathname
+                    .split('/')
+                    .map((segment) => String(segment || '').trim())
+                    .filter(Boolean);
+                  websiteKey = pathSegments.find((segment) => /^0x[0-9A-Za-z_-]{10,}$/.test(segment)) || '';
+                }
+                if (websiteKey) {
+                  return {
+                    websiteURL: window.location.href,
+                    websiteKey,
+                    action: src.searchParams.get('action') || '',
+                    cData: src.searchParams.get('cData') || src.searchParams.get('data') || '',
+                  };
+                }
+              }
+            } catch (_) {}
+
             return null;
             """
         )

@@ -32,6 +32,7 @@ class TurnstileRuntimeTests(unittest.TestCase):
         self.assertIsNone(task)
         self.assertIn("pathSegments.find", driver.script)
         self.assertIn("^0x[0-9A-Za-z_-]{10,}$", driver.script)
+        self.assertIn("performance.getEntriesByType('resource')", driver.script)
 
     def test_wait_for_turnstile_task_retries_until_payload_is_available(self) -> None:
         payloads = [
