@@ -19,7 +19,3 @@ networks:
   easybrowser_service_network:
     name: ${EASYBROWSER_SERVICE_NETWORK:-EasyAiMi}
     external: true
-
-networks:
-  EasyAiMi:
-    external: true
