@@ -11,9 +11,14 @@ services:
     ports:
       - ${EASYBROWSER_SERVICE_HOST_PORT:-18080}:18080
     networks:
-      ${EASYBROWSER_SERVICE_NETWORK:-EasyAiMi}:
+      easybrowser_service_network:
         aliases:
           - ${EASYBROWSER_SERVICE_NETWORK_ALIAS:-easybrowser-service}
+
+networks:
+  easybrowser_service_network:
+    name: ${EASYBROWSER_SERVICE_NETWORK:-EasyAiMi}
+    external: true
 
 networks:
   EasyAiMi:
