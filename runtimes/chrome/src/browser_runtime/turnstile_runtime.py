@@ -67,6 +67,21 @@ def extract_turnstile_task(driver) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def wait_for_turnstile_task(
+    driver,
+    *,
+    timeout_seconds: float = 8.0,
+    poll_interval_seconds: float = 0.5,
+) -> dict[str, Any] | None:
+    deadline = time.time() + max(0.5, float(timeout_seconds))
+    while time.time() < deadline:
+        task = extract_turnstile_task(driver)
+        if task:
+            return task
+        time.sleep(max(0.05, float(poll_interval_seconds)))
+    return extract_turnstile_task(driver)
+
+
 def inject_turnstile_token(driver, *, token: str) -> bool:
     try:
         result = driver.execute_script(
@@ -156,7 +171,7 @@ def maybe_solve_turnstile_challenge(
         resolved_provider = "turnstile-solver-camoufox"
     if not resolved_provider:
         return False
-    task = extract_turnstile_task(driver)
+    task = wait_for_turnstile_task(driver)
     if not task:
         if dbg_fn:
             dbg_fn("captcha", "turnstile provider configured but no sitekey detected", driver=driver)
