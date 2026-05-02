@@ -103,6 +103,10 @@ The repository root now includes a host-facing one-click deploy wrapper:
 pwsh .\deploy-host.ps1
 ```
 
+You can also download only `deploy-host.ps1` from GitHub and run it on a blank
+host. The script bootstraps a local repo cache automatically before invoking
+the canonical deployment path.
+
 That root entrypoint does three things in order:
 
 - creates `config.yaml` from `config.example.yaml` when it is missing
@@ -154,6 +158,7 @@ See:
 - `docs/github-actions-secrets.md`
 - `docs/release-workflow.md`
 - `docs/migration-audit.md`
+- `docs/root-host-deploy-standard.md`
 
 ## Root Operator Entry
 
