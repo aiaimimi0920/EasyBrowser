@@ -7,6 +7,7 @@ Current entrypoints:
 - `init-config.ps1`
 - `test-all.ps1`
 - `test-service-base-instance.ps1`
+- `deploy-service-base.ps1`
 - `start-service-base.ps1`
 - `probe-service-base.ps1`
 - `smoke-open-page.ps1`

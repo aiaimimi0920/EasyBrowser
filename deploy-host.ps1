@@ -1,7 +1,14 @@
 param(
     [string]$ConfigPath = "config.yaml",
     [string]$ServiceEnvOutput = "",
-    [switch]$Rebuild,
+    [switch]$NoBuild,
+    [string]$Image = "",
+    [switch]$Pull,
+    [string]$ContainerName = "",
+    [int]$HostPort = 0,
+    [string]$NetworkName = "EasyAiMi",
+    [string]$NetworkAlias = "easybrowser-service",
+    [string]$ComposeProjectName = "",
     [switch]$RenderOnly,
     [switch]$SkipInitConfig,
     [string]$RepoOwner = "aiaimimi0920",
@@ -157,7 +164,7 @@ $repoInfo = Ensure-RepoRoot `
     -Name $RepoName `
     -Ref $RepoRef `
     -RefKind $RepoRefKind `
-    -RequiredRelativePaths @("README.md", "scripts\start-service-base.ps1", "scripts\render-derived-configs.ps1") `
+    -RequiredRelativePaths @("README.md", "scripts\deploy-service-base.ps1", "scripts\render-derived-configs.ps1", "deploy\service\base\docker-compose.yaml") `
     -ArchiveUrl $RepoArchiveUrl `
     -CacheRoot $RepoCacheRoot `
     -ForceRefresh:$ForceRefreshRepo
@@ -182,7 +189,7 @@ $resolvedServiceEnvOutput = if ([string]::IsNullOrWhiteSpace($ServiceEnvOutput))
 }
 
 $renderScript = Resolve-AbsolutePath -Path "scripts\render-derived-configs.ps1" -BaseDir $repoRoot
-$startScript = Resolve-AbsolutePath -Path "scripts\start-service-base.ps1" -BaseDir $repoRoot
+$deployScript = Resolve-AbsolutePath -Path "scripts\deploy-service-base.ps1" -BaseDir $repoRoot
 $configExamplePath = Resolve-AbsolutePath -Path "config.example.yaml" -BaseDir $repoRoot
 
 if (-not $SkipInitConfig -and -not (Test-Path -LiteralPath $resolvedConfigPath)) {
@@ -210,12 +217,31 @@ if ($RenderOnly) {
     return
 }
 
-$startArgs = @(
+$deployArgs = @(
     "-ExecutionPolicy", "Bypass",
-    "-File", $startScript
+    "-File", $deployScript,
+    "-ConfigPath", $resolvedConfigPath,
+    "-ServiceEnvOutput", $canonicalServiceEnvOutput,
+    "-NetworkName", $NetworkName,
+    "-NetworkAlias", $NetworkAlias
 )
-if ($Rebuild) {
-    $startArgs += "-Rebuild"
+if ($NoBuild) {
+    $deployArgs += "-NoBuild"
+}
+if (-not [string]::IsNullOrWhiteSpace($Image)) {
+    $deployArgs += @("-Image", $Image)
+}
+if ($Pull) {
+    $deployArgs += "-Pull"
+}
+if (-not [string]::IsNullOrWhiteSpace($ContainerName)) {
+    $deployArgs += @("-ContainerName", $ContainerName)
+}
+if ($HostPort -gt 0) {
+    $deployArgs += @("-HostPort", [string]$HostPort)
+}
+if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
+    $deployArgs += @("-ComposeProjectName", $ComposeProjectName)
 }
 
-& powershell @startArgs
+& powershell @deployArgs

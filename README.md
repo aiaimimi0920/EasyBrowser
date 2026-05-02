@@ -107,13 +107,20 @@ You can also download only `deploy-host.ps1` from GitHub and run it on a blank
 host. The script bootstraps a local repo cache automatically before invoking
 the canonical deployment path.
 
-That root entrypoint does three things in order:
+That root entrypoint now deploys the Dockerized `service/base` control plane
+and does three things in order:
 
 - creates `config.yaml` from `config.example.yaml` when it is missing
 - renders `deploy/service/base/.env.local` from the root config
-- forwards into the existing `scripts/start-service-base.ps1` runtime entry
+- forwards into `scripts/deploy-service-base.ps1`
 
-The lower-level start entrypoint is still available:
+The lower-level Docker deploy entrypoint is still available:
+
+```powershell
+pwsh .\scripts\deploy-service-base.ps1
+```
+
+The local process helper is still kept for development-only runs:
 
 ```powershell
 .\scripts\start-service-base.ps1
@@ -163,9 +170,9 @@ See:
 ## Root Operator Entry
 
 - `deploy-host.ps1`
-  - repository-root host wrapper for local service deployment
+  - repository-root host wrapper for Docker deployment
   - renders the deploy-side `.env.local` from the root `config.yaml`
-  - then starts the control plane through the existing service/base helper
+  - then deploys the control plane through Docker
 
 ## Migration Rules
 

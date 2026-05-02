@@ -46,9 +46,15 @@ This host wrapper will:
 
 - create `config.yaml` if it is missing
 - render `deploy/service/base/.env.local` from the root config
-- start the service through the existing `scripts/start-service-base.ps1`
+- deploy the service through `scripts/deploy-service-base.ps1`
 
-The lower-level start script is still available:
+The lower-level Docker deploy script is still available:
+
+```powershell
+pwsh .\scripts\deploy-service-base.ps1
+```
+
+The local process helper is still available for development-only runs:
 
 ```powershell
 .\scripts\start-service-base.ps1

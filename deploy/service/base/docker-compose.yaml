@@ -1,0 +1,20 @@
+services:
+  easybrowser-service-base:
+    build:
+      context: ../../..
+      dockerfile: deploy/service/base/Dockerfile
+    image: ${EASYBROWSER_SERVICE_IMAGE:-easybrowser-service:local}
+    container_name: ${EASYBROWSER_SERVICE_CONTAINER_NAME:-easybrowser-service-base}
+    restart: unless-stopped
+    env_file:
+      - ${EASYBROWSER_SERVICE_ENV_FILE:-./.env.local}
+    ports:
+      - ${EASYBROWSER_SERVICE_HOST_PORT:-18080}:18080
+    networks:
+      ${EASYBROWSER_SERVICE_NETWORK:-EasyAiMi}:
+        aliases:
+          - ${EASYBROWSER_SERVICE_NETWORK_ALIAS:-easybrowser-service}
+
+networks:
+  EasyAiMi:
+    external: true
