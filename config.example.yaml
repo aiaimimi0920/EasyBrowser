@@ -6,6 +6,19 @@
 serviceBase:
   runtime:
     listen: "127.0.0.1:18080"
+    runtimePool:
+      enabled: true
+      reconcileSeconds: 5
+      idleTimeoutSeconds: 120
+      providers:
+        chrome:
+          minWarm: 1
+        camoufox:
+          minWarm: 0
+        geekez:
+          minWarm: 0
+        browserbase:
+          minWarm: 0
 
 chromeRuntime:
   headless: true

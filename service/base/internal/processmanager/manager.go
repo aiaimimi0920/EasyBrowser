@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,6 +31,8 @@ type Manager struct {
 	geekezRuntime      string
 	browserbaseRuntime string
 	seq                atomic.Uint64
+	poolSettings       runtimePoolSettings
+	stopPoolCh         chan struct{}
 
 	mu       sync.RWMutex
 	children map[string]*childProcess
@@ -43,6 +48,18 @@ type childProcess struct {
 	stderrTail []string
 	readyCh    chan struct{}
 	exitCh     chan error
+	ready      bool
+	busy       bool
+	stopping   bool
+	lastIdleAt time.Time
+	launchedAt time.Time
+}
+
+type runtimePoolSettings struct {
+	enabled             bool
+	reconcileInterval   time.Duration
+	idleTimeout         time.Duration
+	minWarmByProviderID map[string]int
 }
 
 func New(svc *service.Service) *Manager {
@@ -54,14 +71,42 @@ func New(svc *service.Service) *Manager {
 	camoufoxRuntime := resolveCamoufoxRuntime(execPath)
 	geekezRuntime := resolveGeekezRuntime(execPath)
 	browserbaseRuntime := resolveBrowserbaseRuntime(execPath)
-	return &Manager{
+	manager := &Manager{
 		service:            svc,
 		execPath:           execPath,
 		chromeRuntime:      chromeRuntime,
 		camoufoxRuntime:    camoufoxRuntime,
 		geekezRuntime:      geekezRuntime,
 		browserbaseRuntime: browserbaseRuntime,
+		poolSettings:       runtimePoolSettingsFromEnv(),
+		stopPoolCh:         make(chan struct{}),
 		children:           make(map[string]*childProcess),
+	}
+	if manager.poolSettings.enabled {
+		go manager.runtimePoolLoop()
+	}
+	return manager
+}
+
+func (m *Manager) Close() {
+	if m == nil {
+		return
+	}
+	select {
+	case <-m.stopPoolCh:
+	default:
+		close(m.stopPoolCh)
+	}
+
+	m.mu.RLock()
+	children := make([]*childProcess, 0, len(m.children))
+	for _, child := range m.children {
+		children = append(children, child)
+	}
+	m.mu.RUnlock()
+
+	for _, child := range children {
+		m.killChild(child)
 	}
 }
 
@@ -119,6 +164,7 @@ func (m *Manager) SpawnStub(providerID string) (model.RuntimeView, error) {
 		stdin:      stdin,
 		readyCh:    make(chan struct{}),
 		exitCh:     make(chan error, 1),
+		launchedAt: time.Now(),
 	}
 
 	m.recordOperationalEvent("runtime_spawn_started", "info", fmt.Sprintf("starting stub runtime for provider %s", providerID), model.Trace{
@@ -389,6 +435,7 @@ func (m *Manager) startChildCommand(providerID, runtimeID string, cmd *exec.Cmd,
 		stderrTail: make([]string, 0, 12),
 		readyCh:    make(chan struct{}),
 		exitCh:     make(chan error, 1),
+		launchedAt: time.Now(),
 	}
 
 	m.recordOperationalEvent("runtime_spawn_started", "info", fmt.Sprintf("starting %s", label), model.Trace{
@@ -487,9 +534,14 @@ func (m *Manager) recordOperationalEvent(kind, severity, message string, trace m
 }
 
 func (m *Manager) DispatchTask(taskID, runtimeID string, req model.ExecuteRequest) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	child, ok := m.children[runtimeID]
-	m.mu.RUnlock()
+	if ok {
+		child.busy = true
+		child.ready = true
+		child.lastIdleAt = time.Time{}
+	}
+	m.mu.Unlock()
 	if !ok {
 		return service.ErrNotFound
 	}
@@ -513,9 +565,12 @@ func (m *Manager) DispatchTask(taskID, runtimeID string, req model.ExecuteReques
 }
 
 func (m *Manager) ShutdownRuntime(runtimeID string) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	child, ok := m.children[runtimeID]
-	m.mu.RUnlock()
+	if ok {
+		child.stopping = true
+	}
+	m.mu.Unlock()
 	if !ok {
 		return service.ErrNotFound
 	}
@@ -588,6 +643,12 @@ func (m *Manager) handleEnvelope(child *childProcess, env ipc.Envelope) {
 		if _, _, err := m.service.RegisterRuntime(payload); err != nil {
 			log.Printf("easybrowser: failed to register runtime %s: %v", child.runtimeID, err)
 		}
+		m.mu.Lock()
+		child.ready = true
+		child.busy = false
+		child.stopping = false
+		child.lastIdleAt = time.Now()
+		m.mu.Unlock()
 		select {
 		case <-child.readyCh:
 		default:
@@ -606,6 +667,13 @@ func (m *Manager) handleEnvelope(child *childProcess, env ipc.Envelope) {
 		if _, _, err := m.service.RecordCompletion(payload); err != nil {
 			log.Printf("easybrowser: failed to record completion for %s: %v", child.runtimeID, err)
 		}
+		m.mu.Lock()
+		child.busy = false
+		child.ready = true
+		if !child.stopping {
+			child.lastIdleAt = time.Now()
+		}
+		m.mu.Unlock()
 	}
 }
 
@@ -821,6 +889,61 @@ func durationFromEnvMs(key string, fallback time.Duration) time.Duration {
 	return millis
 }
 
+func durationFromEnvSeconds(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	seconds, err := time.ParseDuration(value + "s")
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+	return seconds
+}
+
+func boolFromEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func intFromEnv(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	if parsed < 0 {
+		return 0
+	}
+	return parsed
+}
+
+func runtimePoolSettingsFromEnv() runtimePoolSettings {
+	return runtimePoolSettings{
+		enabled:           boolFromEnv("EASYBROWSER_RUNTIME_POOL_ENABLED", true),
+		reconcileInterval: durationFromEnvSeconds("EASYBROWSER_RUNTIME_POOL_RECONCILE_SECONDS", 5*time.Second),
+		idleTimeout:       durationFromEnvSeconds("EASYBROWSER_RUNTIME_POOL_IDLE_TIMEOUT_SECONDS", 120*time.Second),
+		minWarmByProviderID: map[string]int{
+			"chrome":      intFromEnv("EASYBROWSER_CHROME_MIN_WARM", 0),
+			"camoufox":    intFromEnv("EASYBROWSER_CAMOUFOX_MIN_WARM", 0),
+			"geekez":      intFromEnv("EASYBROWSER_GEEKEZ_MIN_WARM", 0),
+			"browserbase": intFromEnv("EASYBROWSER_BROWSERBASE_MIN_WARM", 0),
+		},
+	}
+}
+
 func runtimeLaunchMode(providerID string) string {
 	key := "EASYBROWSER_" + strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(providerID), "-", "_")) + "_RUNTIME_MODE"
 	if value := strings.ToLower(strings.TrimSpace(os.Getenv(key))); value == "docker" || value == "local" {
@@ -905,8 +1028,115 @@ func (m *Manager) killChild(child *childProcess) {
 	if child == nil || child.cmd == nil || child.cmd.Process == nil {
 		return
 	}
+	m.mu.Lock()
+	child.stopping = true
+	m.mu.Unlock()
 	_ = child.stdin.Close()
 	_ = child.cmd.Process.Kill()
+}
+
+type providerPoolSnapshot struct {
+	activeChildren []*childProcess
+	idleChildren   []*childProcess
+}
+
+func (m *Manager) runtimePoolLoop() {
+	ticker := time.NewTicker(m.poolSettings.reconcileInterval)
+	defer ticker.Stop()
+
+	m.reconcileRuntimePool()
+	for {
+		select {
+		case <-ticker.C:
+			m.reconcileRuntimePool()
+		case <-m.stopPoolCh:
+			return
+		}
+	}
+}
+
+func (m *Manager) reconcileRuntimePool() {
+	if m == nil || m.service == nil {
+		return
+	}
+
+	providerViews := m.service.ListProviders().Providers
+	providerEnabled := make(map[string]bool, len(providerViews))
+	providerLimits := make(map[string]int, len(providerViews))
+	for _, providerView := range providerViews {
+		providerEnabled[providerView.ProviderID] = providerView.Enabled
+		providerLimits[providerView.ProviderID] = providerView.Limits.MaxRuntimes
+	}
+
+	snapshots := m.snapshotProviderPoolState()
+	now := time.Now()
+
+	for providerID, minWarm := range m.poolSettings.minWarmByProviderID {
+		if !providerEnabled[providerID] {
+			minWarm = 0
+		}
+		limit := providerLimits[providerID]
+		if limit <= 0 {
+			limit = math.MaxInt
+		}
+
+		snapshot := snapshots[providerID]
+		activeCount := len(snapshot.activeChildren)
+		idleCount := len(snapshot.idleChildren)
+
+		for idleCount < minWarm && activeCount < limit {
+			if _, err := m.SpawnRuntime(providerID); err != nil {
+				log.Printf("easybrowser runtime pool: failed to prewarm provider %s: %v", providerID, err)
+				break
+			}
+			activeCount++
+			idleCount++
+		}
+
+		if activeCount <= minWarm || m.poolSettings.idleTimeout <= 0 {
+			continue
+		}
+
+		sort.Slice(snapshot.idleChildren, func(i, j int) bool {
+			return snapshot.idleChildren[i].lastIdleAt.Before(snapshot.idleChildren[j].lastIdleAt)
+		})
+
+		excess := activeCount - minWarm
+		for _, child := range snapshot.idleChildren {
+			if excess <= 0 {
+				break
+			}
+			if child == nil || child.stopping {
+				continue
+			}
+			if child.lastIdleAt.IsZero() || now.Sub(child.lastIdleAt) < m.poolSettings.idleTimeout {
+				continue
+			}
+			m.killChild(child)
+			excess--
+		}
+	}
+}
+
+func (m *Manager) snapshotProviderPoolState() map[string]providerPoolSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	snapshots := make(map[string]providerPoolSnapshot)
+	for _, child := range m.children {
+		if child == nil {
+			continue
+		}
+		snapshot := snapshots[child.providerID]
+		if !child.stopping {
+			snapshot.activeChildren = append(snapshot.activeChildren, child)
+			if child.ready && !child.busy {
+				snapshot.idleChildren = append(snapshot.idleChildren, child)
+			}
+		}
+		snapshots[child.providerID] = snapshot
+	}
+	return snapshots
 }
 
 func searchRoots(start string) []string {

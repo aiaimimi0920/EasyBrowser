@@ -41,5 +41,8 @@ func New(cfg config.Config) *App {
 }
 
 func (a *App) Run() error {
+	if a.processes != nil {
+		defer a.processes.Close()
+	}
 	return a.server.ListenAndServe()
 }

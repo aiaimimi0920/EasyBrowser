@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aiaimimi0920/EasyBrowser/internal/service"
 )
@@ -163,6 +164,63 @@ func TestLocalChromeRuntimeEnvMapsEasyBrowserOverrides(t *testing.T) {
 	}
 }
 
+func TestRuntimePoolSettingsFromEnvUsesProviderOverrides(t *testing.T) {
+	restore := captureEnv(t,
+		"EASYBROWSER_RUNTIME_POOL_ENABLED",
+		"EASYBROWSER_RUNTIME_POOL_RECONCILE_SECONDS",
+		"EASYBROWSER_RUNTIME_POOL_IDLE_TIMEOUT_SECONDS",
+		"EASYBROWSER_CHROME_MIN_WARM",
+		"EASYBROWSER_CAMOUFOX_MIN_WARM",
+	)
+	defer restore()
+
+	_ = os.Setenv("EASYBROWSER_RUNTIME_POOL_ENABLED", "true")
+	_ = os.Setenv("EASYBROWSER_RUNTIME_POOL_RECONCILE_SECONDS", "7")
+	_ = os.Setenv("EASYBROWSER_RUNTIME_POOL_IDLE_TIMEOUT_SECONDS", "180")
+	_ = os.Setenv("EASYBROWSER_CHROME_MIN_WARM", "2")
+	_ = os.Setenv("EASYBROWSER_CAMOUFOX_MIN_WARM", "1")
+
+	settings := runtimePoolSettingsFromEnv()
+	if !settings.enabled {
+		t.Fatal("expected runtime pool to be enabled")
+	}
+	if settings.reconcileInterval != 7*time.Second {
+		t.Fatalf("expected reconcile interval 7s, got %s", settings.reconcileInterval)
+	}
+	if settings.idleTimeout != 180*time.Second {
+		t.Fatalf("expected idle timeout 180s, got %s", settings.idleTimeout)
+	}
+	if settings.minWarmByProviderID["chrome"] != 2 {
+		t.Fatalf("expected chrome min warm 2, got %d", settings.minWarmByProviderID["chrome"])
+	}
+	if settings.minWarmByProviderID["camoufox"] != 1 {
+		t.Fatalf("expected camoufox min warm 1, got %d", settings.minWarmByProviderID["camoufox"])
+	}
+}
+
+func TestSnapshotProviderPoolStateCountsReadyIdleChildren(t *testing.T) {
+	manager := &Manager{
+		children: map[string]*childProcess{
+			"rt-1": {runtimeID: "rt-1", providerID: "chrome", ready: true, busy: false, lastIdleAt: time.Now()},
+			"rt-2": {runtimeID: "rt-2", providerID: "chrome", ready: true, busy: true},
+			"rt-3": {runtimeID: "rt-3", providerID: "camoufox", ready: true, busy: false, stopping: true},
+		},
+	}
+
+	snapshots := manager.snapshotProviderPoolState()
+	chrome := snapshots["chrome"]
+	if len(chrome.activeChildren) != 2 {
+		t.Fatalf("expected 2 active chrome children, got %d", len(chrome.activeChildren))
+	}
+	if len(chrome.idleChildren) != 1 {
+		t.Fatalf("expected 1 idle chrome child, got %d", len(chrome.idleChildren))
+	}
+	camoufox := snapshots["camoufox"]
+	if len(camoufox.activeChildren) != 0 || len(camoufox.idleChildren) != 0 {
+		t.Fatal("expected stopping child to be excluded from active and idle pool counts")
+	}
+}
+
 func restoreEnvVar(key, previous string) {
 	if previous == "" {
 		_ = os.Unsetenv(key)
@@ -181,4 +239,17 @@ func envSliceToMap(env []string) map[string]string {
 		out[parts[0]] = parts[1]
 	}
 	return out
+}
+
+func captureEnv(t *testing.T, keys ...string) func() {
+	t.Helper()
+	previous := make(map[string]string, len(keys))
+	for _, key := range keys {
+		previous[key] = os.Getenv(key)
+	}
+	return func() {
+		for _, key := range keys {
+			restoreEnvVar(key, previous[key])
+		}
+	}
 }

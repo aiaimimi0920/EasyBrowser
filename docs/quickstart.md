@@ -48,6 +48,10 @@ This host wrapper will:
 - render `deploy/service/base/.env.local` from the root config
 - deploy the service through `scripts/deploy-service-base.ps1`
 
+By default the rendered runtime env enables the executor pool controller with
+a small warm floor for Chrome and idle reaping for surplus runtimes. Tune it
+through `serviceBase.runtime.runtimePool` in the root `config.yaml`.
+
 The lower-level Docker deploy script is still available:
 
 ```powershell

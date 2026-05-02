@@ -27,3 +27,11 @@ Current intended boundaries:
 
 This repository skeleton intentionally assumes that process isolation is a
 first-class runtime concern rather than an implementation detail.
+
+The control plane is also the executor manager:
+
+- tasks first enter the `service/base` routing and planning layer
+- the process manager owns provider runtimes as child executors
+- a small warm set of runtimes may stay alive even when idle
+- additional runtimes are spawned on demand when task pressure arrives
+- surplus idle runtimes are reaped after the configured idle timeout

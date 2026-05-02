@@ -37,6 +37,8 @@ def stringify(value: Any) -> str:
 def build_runtime_env(config: dict[str, Any]) -> dict[str, str]:
     service_base = config.get("serviceBase") or {}
     service_runtime = service_base.get("runtime") or {}
+    runtime_pool = service_runtime.get("runtimePool") or {}
+    runtime_pool_providers = runtime_pool.get("providers") or {}
     chrome = config.get("chromeRuntime") or {}
     camoufox = config.get("camoufoxRuntime") or {}
     geekez = config.get("geekezRuntime") or {}
@@ -49,6 +51,13 @@ def build_runtime_env(config: dict[str, Any]) -> dict[str, str]:
         if normalize_bool(chrome.get("useUndetectedChromedriver"), False)
         else "0",
         "EASYBROWSER_CAMOUFOX_HEADLESS": "1" if normalize_bool(camoufox.get("headless"), True) else "0",
+        "EASYBROWSER_RUNTIME_POOL_ENABLED": "1" if normalize_bool(runtime_pool.get("enabled"), True) else "0",
+        "EASYBROWSER_RUNTIME_POOL_RECONCILE_SECONDS": stringify(runtime_pool.get("reconcileSeconds") or 5),
+        "EASYBROWSER_RUNTIME_POOL_IDLE_TIMEOUT_SECONDS": stringify(runtime_pool.get("idleTimeoutSeconds") or 120),
+        "EASYBROWSER_CHROME_MIN_WARM": stringify((runtime_pool_providers.get("chrome") or {}).get("minWarm") or 1),
+        "EASYBROWSER_CAMOUFOX_MIN_WARM": stringify((runtime_pool_providers.get("camoufox") or {}).get("minWarm") or 0),
+        "EASYBROWSER_GEEKEZ_MIN_WARM": stringify((runtime_pool_providers.get("geekez") or {}).get("minWarm") or 0),
+        "EASYBROWSER_BROWSERBASE_MIN_WARM": stringify((runtime_pool_providers.get("browserbase") or {}).get("minWarm") or 0),
     }
 
     optional_map = {

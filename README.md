@@ -43,8 +43,16 @@ Responsibilities:
 - public/admin/internal HTTP API
 - browser session allocation
 - provider strategy, cooldown, and telemetry
-- runtime registration and child-process supervision
+- runtime registration, child-process supervision, and dynamic runtime pooling
 - internal Browserbase provider adapter
+
+The intended runtime model is:
+
+- `service/base` is the planning and manager layer
+- provider runtimes are child executors owned by the manager
+- the manager may keep a small warm set of idle executors
+- task pressure can grow the pool dynamically
+- idle surplus executors are reaped automatically
 
 ### `runtimes/chrome`
 
@@ -113,6 +121,13 @@ and does three things in order:
 - creates `config.yaml` from `config.example.yaml` when it is missing
 - renders `deploy/service/base/.env.local` from the root config
 - forwards into `scripts/deploy-service-base.ps1`
+
+The rendered runtime env now also carries the runtime-pool policy, including:
+
+- `EASYBROWSER_RUNTIME_POOL_ENABLED`
+- `EASYBROWSER_RUNTIME_POOL_RECONCILE_SECONDS`
+- `EASYBROWSER_RUNTIME_POOL_IDLE_TIMEOUT_SECONDS`
+- per-provider warm floor such as `EASYBROWSER_CHROME_MIN_WARM`
 
 The lower-level Docker deploy entrypoint is still available:
 
