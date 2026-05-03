@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import sys
+import threading
 import time
 from typing import Any
 
@@ -256,6 +257,8 @@ class ChromeRuntime:
         self.runtime_id = runtime_id
         self.sessions = BrowserSessionManager(default_ttl_seconds=900)
         self.recent_failures = 0
+        self.running = True
+        self.heartbeat_thread: threading.Thread | None = None
 
     def send_envelope(self, kind: str, action: str, payload: dict[str, Any], trace: dict[str, Any] | None = None) -> None:
         body = {
@@ -270,8 +273,9 @@ class ChromeRuntime:
             },
             "payload": payload,
         }
-        sys.stdout.write(json.dumps(body) + "\n")
-        sys.stdout.flush()
+        protocol_stream = getattr(sys, "__stdout__", None) or sys.stdout
+        protocol_stream.write(json.dumps(body) + "\n")
+        protocol_stream.flush()
 
     def send_ready(self) -> None:
         self.send_envelope(
@@ -280,7 +284,7 @@ class ChromeRuntime:
             {
                 "runtime_id": self.runtime_id,
                 "provider_id": self.provider_id,
-                "pid": getattr(sys, "pid", None) or None,
+                "pid": os.getpid(),
                 "state": "ready",
                 "started_at": now_iso(),
             },
@@ -317,6 +321,15 @@ class ChromeRuntime:
             },
             {"task_id": task_id},
         )
+
+    def start_heartbeat_loop(self) -> None:
+        def _run() -> None:
+            while self.running:
+                self.send_heartbeat(True)
+                time.sleep(5)
+
+        self.heartbeat_thread = threading.Thread(target=_run, daemon=True)
+        self.heartbeat_thread.start()
 
     def _find_element(self, driver: Any, target: dict[str, Any]) -> Any:
         if By is None:
@@ -648,24 +661,28 @@ class ChromeRuntime:
     def run(self) -> int:
         self.send_ready()
         self.send_heartbeat(True)
-        for line in sys.stdin:
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                env = json.loads(raw)
-            except Exception:
-                continue
-            kind = str(env.get("kind") or "")
-            action = str(env.get("action") or "")
-            payload = env.get("payload") if isinstance(env.get("payload"), dict) else {}
-            if kind == "request" and action == "execute_task":
-                self.handle_execute_task(payload)
-                continue
-            if kind == "request" and action == "shutdown_runtime":
-                break
-            if kind == "request" and action == "collect_health":
-                self.send_heartbeat(True)
+        self.start_heartbeat_loop()
+        try:
+            for line in sys.stdin:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    env = json.loads(raw)
+                except Exception:
+                    continue
+                kind = str(env.get("kind") or "")
+                action = str(env.get("action") or "")
+                payload = env.get("payload") if isinstance(env.get("payload"), dict) else {}
+                if kind == "request" and action == "execute_task":
+                    self.handle_execute_task(payload)
+                    continue
+                if kind == "request" and action == "shutdown_runtime":
+                    break
+                if kind == "request" and action == "collect_health":
+                    self.send_heartbeat(True)
+        finally:
+            self.running = False
         return 0
 
 

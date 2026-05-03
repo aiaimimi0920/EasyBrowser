@@ -46,6 +46,12 @@ def build_runtime_env(config: dict[str, Any]) -> dict[str, str]:
 
     env: dict[str, str] = {
         "EASYBROWSER_LISTEN": stringify(service_runtime.get("listen") or "127.0.0.1:18080"),
+        "EASYBROWSER_RUNTIME_MODE": stringify(service_runtime.get("launchMode") or "docker"),
+        "EASYBROWSER_DOCKER_NETWORK": stringify(service_runtime.get("dockerNetwork") or "EasyAiMi"),
+        "EASYBROWSER_DOCKER_COMPOSE_PROJECT": stringify(service_runtime.get("dockerComposeProject") or "easy-browser"),
+        "EASYBROWSER_CHROME_DOCKER_IMAGE": stringify((chrome.get("dockerImage") or "easy-browser/chrome-runtime:local")),
+        "EASYBROWSER_CAMOUFOX_DOCKER_IMAGE": stringify((camoufox.get("dockerImage") or "easy-browser/camoufox-runtime:local")),
+        "EASYBROWSER_GEEKEZ_DOCKER_IMAGE": stringify((geekez.get("dockerImage") or "easy-browser/geekez-runtime:local")),
         "EASYBROWSER_CHROME_HEADLESS": "1" if normalize_bool(chrome.get("headless"), True) else "0",
         "EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER": "1"
         if normalize_bool(chrome.get("useUndetectedChromedriver"), False)

@@ -10,6 +10,8 @@ services:
       - ${EASYBROWSER_SERVICE_ENV_FILE:-./.env.local}
     ports:
       - ${EASYBROWSER_SERVICE_HOST_PORT:-18080}:18080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       easybrowser_service_network:
         aliases:

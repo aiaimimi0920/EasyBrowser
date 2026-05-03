@@ -6,6 +6,9 @@
 serviceBase:
   runtime:
     listen: "127.0.0.1:18080"
+    launchMode: "docker"
+    dockerNetwork: "EasyAiMi"
+    dockerComposeProject: "easy-browser"
     runtimePool:
       enabled: true
       reconcileSeconds: 5
@@ -23,17 +26,20 @@ serviceBase:
 chromeRuntime:
   headless: true
   useUndetectedChromedriver: false
+  dockerImage: "easy-browser/chrome-runtime:local"
   binaryPath: ""
   chromedriverPath: ""
   pythonPath: ""
 
 camoufoxRuntime:
+  dockerImage: "easy-browser/camoufox-runtime:local"
   pythonPath: ""
   headless: true
   os: "windows"
   readyTimeoutMs: 75000
 
 geekezRuntime:
+  dockerImage: "easy-browser/geekez-runtime:local"
   pythonPath: ""
   readyTimeoutMs: 90000
 

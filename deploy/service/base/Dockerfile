@@ -8,21 +8,28 @@ WORKDIR /workspace/service/base
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/easybrowser ./cmd/easybrowser
 
+FROM docker:28-cli AS dockercli
+
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 ENV EASYBROWSER_LISTEN=0.0.0.0:18080 \
-    EASYBROWSER_RUNTIME_MODE=local \
+    EASYBROWSER_RUNTIME_MODE=docker \
+    EASYBROWSER_DOCKER_NETWORK=EasyAiMi \
+    EASYBROWSER_DOCKER_COMPOSE_PROJECT=easy-browser \
     BROWSER_BINARY_PATH=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver \
     HEADLESS=1 \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /out/easybrowser /usr/local/bin/easybrowser
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY runtimes/chrome /runtimes/chrome
 COPY runtimes/chrome/requirements.txt /opt/easybrowser/chrome-runtime-requirements.txt
 
 RUN apt-get -o Acquire::Retries=5 update \
+    && sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install -y --fix-missing --no-install-recommends \
         ca-certificates \
         chromium \

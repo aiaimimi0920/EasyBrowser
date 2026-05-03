@@ -48,4 +48,4 @@ ENV PYTHONPATH=/opt/easybrowser/runtimes/chrome/src \
 
 WORKDIR /opt/easybrowser/runtimes/chrome
 
-CMD ["python", "/opt/easybrowser/runtimes/chrome/src/browser_runtime/runtime_entry.py", "--provider", "chrome", "--runtime-id", "manual"]
+CMD ["python", "/opt/easybrowser/runtimes/chrome/src/chrome_runtime/runtime_entry.py", "--provider", "chrome", "--runtime-id", "manual"]

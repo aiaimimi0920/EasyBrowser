@@ -37,6 +37,54 @@ from shared_proxy import (
 _uc_init_lock = threading.Lock()
 
 
+def _argument_base(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return normalized.split("=", 1)[0]
+
+
+class _FilteredChromeArgumentList(list[str]):
+    def __init__(
+        self,
+        values: list[str] | tuple[str, ...],
+        *,
+        blocked_bases: set[str] | None = None,
+        dedupe_bases: set[str] | None = None,
+    ) -> None:
+        super().__init__()
+        self._blocked_bases = {item.strip() for item in (blocked_bases or set()) if item.strip()}
+        self._dedupe_bases = {item.strip() for item in (dedupe_bases or set()) if item.strip()}
+        self.extend(values)
+
+    def _should_skip(self, value: str) -> bool:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return True
+        base = _argument_base(normalized)
+        if base in self._blocked_bases:
+            return True
+        if base in self._dedupe_bases:
+            for existing in self:
+                if _argument_base(existing) == base:
+                    return True
+        return False
+
+    def append(self, value: str) -> None:
+        if self._should_skip(value):
+            return
+        super().append(str(value).strip())
+
+    def extend(self, values) -> None:  # type: ignore[override]
+        for value in values:
+            self.append(value)
+
+    def insert(self, index: int, value: str) -> None:
+        if self._should_skip(value):
+            return
+        super().insert(index, str(value).strip())
+
+
 def normalize_browser_backend(value: str | None) -> str:
     normalized = (value or "").strip().lower()
     if normalized in ("camoufox", "firefox"):
@@ -655,7 +703,6 @@ def new_driver(
     if headless != 0:
         options.add_argument('--headless=new')
 
-    options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     window_size = str(os.environ.get("BROWSER_WINDOW_SIZE", "500,600") or "500,600")
@@ -695,36 +742,16 @@ def new_driver(
     if startup_url:
         options.add_argument(startup_url)
 
-    host_rule_entries: list[str] = []
-
-    block_opt = int(os.environ.get("BLOCK_GOOGLE_OPT_GUIDE", "2"))
-    if block_opt == 2:
-        host_rule_entries.extend([
-            "MAP optimizationguide-pa.googleapis.com 127.0.0.1",
-            "MAP optimizationguide-pa.googleapis.com:443 127.0.0.1",
-            "MAP optimizationguide-pa.googleapis.com:80 127.0.0.1",
-        ])
-
-    block_noisy = int(os.environ.get("BLOCK_NOISY_HOSTS", "2"))
-    if block_noisy == 2:
-        host_rule_entries.extend([
-            "MAP update.googleapis.com 127.0.0.1",
-            "MAP browser-intake-datadoghq.com 127.0.0.1",
-            "MAP *.gvt1.com 127.0.0.1",
-            "MAP *.cloudflarestream.com 127.0.0.1",
-        ])
-
-    if host_rule_entries:
-        options.add_argument(f"--host-resolver-rules={', '.join(host_rule_entries)}")
-
-    options.add_argument('--disable-blink-features=AutomationControlled')
-
     browser_binary = resolve_camoufox_browser_binary_path() if resolved_backend == "camoufox" else resolve_browser_binary_path()
     if browser_binary:
         options.binary_location = browser_binary
+    # Apply the core anti-automation Chrome options for every Chromium-based
+    # backend, not only camoufox. Without this, the visible ChromeDriver banner
+    # leaks through on the plain chrome runtime and tends to correlate with more
+    # aggressive anti-bot challenge behavior.
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     if resolved_backend == "camoufox":
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("useAutomationExtension", False)
         options.add_argument("--disable-features=IsolateOrigins,site-per-process")
         options.add_argument("--disable-site-isolation-trials")
         options.add_argument("--disable-popup-blocking")
@@ -821,15 +848,50 @@ def new_driver(
     if browser_user_data_dir and not native_camoufox_bootstrapped:
         _cleanup_stale_browser_startup_state(browser_user_data_dir)
 
+    chromedriver_binary = resolve_chromedriver_binary_path()
+    print(
+        "[driver] launch "
+        f"backend={resolved_backend} "
+        f"use_uc={use_uc} "
+        f"uc_available={uc is not None} "
+        f"browser_binary={browser_binary or '<auto>'} "
+        f"chromedriver_binary={chromedriver_binary or '<auto>'}",
+        flush=True,
+    )
+
     driver = None
     if use_uc and uc is not None:
         try:
             with _uc_init_lock:
+                options._arguments = _FilteredChromeArgumentList(  # type: ignore[attr-defined]
+                    list(getattr(options, "arguments", [])),
+                    blocked_bases={"--no-sandbox", "--test-type"},
+                    dedupe_bases={
+                        "--lang",
+                        "--log-level",
+                        "--no-default-browser-check",
+                        "--no-first-run",
+                        "--no-sandbox",
+                        "--remote-debugging-host",
+                        "--remote-debugging-port",
+                        "--user-agent",
+                        "--user-data-dir",
+                        "--window-size",
+                    },
+                )
                 uc_kwargs: dict[str, Any] = {"options": options}
                 uc_kwargs["suppress_welcome"] = True
+                # Let UC spawn the browser process itself so the visible Chrome
+                # window does not inherit the standard ChromeDriver automation
+                # banner path. The default subprocess=True path still ends up
+                # exposing `--enable-automation` on this host.
+                uc_kwargs["use_subprocess"] = False
+                # We already inject --no-sandbox ourselves above. Leaving UC's
+                # no_sandbox=True appends an extra --test-type marker, which is
+                # another automation smell on the visible Chrome command line.
+                uc_kwargs["no_sandbox"] = False
                 if browser_binary:
                     uc_kwargs["browser_executable_path"] = browser_binary
-                chromedriver_binary = resolve_chromedriver_binary_path()
                 if chromedriver_binary:
                     uc_kwargs["driver_executable_path"] = chromedriver_binary
                 if browser_user_data_dir:
@@ -838,13 +900,15 @@ def new_driver(
                 if vm:
                     uc_kwargs["version_main"] = vm
                 driver = uc.Chrome(**uc_kwargs)
+                print("[driver] launched via undetected_chromedriver", flush=True)
         except Exception as e:
-            _ = e
+            print(f"[driver] undetected_chromedriver launch failed: {e}", flush=True)
             driver = None
 
     if driver is None:
-        service = Service()
+        service = Service(executable_path=chromedriver_binary) if chromedriver_binary else Service()
         driver = webdriver.Chrome(service=service, options=options)
+        print("[driver] launched via selenium webdriver", flush=True)
 
     if headless == 0 and desired_window_size is not None:
         w, h = desired_window_size

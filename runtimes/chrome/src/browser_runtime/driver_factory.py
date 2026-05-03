@@ -37,6 +37,54 @@ from shared_proxy import (
 _uc_init_lock = threading.Lock()
 
 
+def _argument_base(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return normalized.split("=", 1)[0]
+
+
+class _FilteredChromeArgumentList(list[str]):
+    def __init__(
+        self,
+        values: list[str] | tuple[str, ...],
+        *,
+        blocked_bases: set[str] | None = None,
+        dedupe_bases: set[str] | None = None,
+    ) -> None:
+        super().__init__()
+        self._blocked_bases = {item.strip() for item in (blocked_bases or set()) if item.strip()}
+        self._dedupe_bases = {item.strip() for item in (dedupe_bases or set()) if item.strip()}
+        self.extend(values)
+
+    def _should_skip(self, value: str) -> bool:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return True
+        base = _argument_base(normalized)
+        if base in self._blocked_bases:
+            return True
+        if base in self._dedupe_bases:
+            for existing in self:
+                if _argument_base(existing) == base:
+                    return True
+        return False
+
+    def append(self, value: str) -> None:
+        if self._should_skip(value):
+            return
+        super().append(str(value).strip())
+
+    def extend(self, values) -> None:  # type: ignore[override]
+        for value in values:
+            self.append(value)
+
+    def insert(self, index: int, value: str) -> None:
+        if self._should_skip(value):
+            return
+        super().insert(index, str(value).strip())
+
+
 def normalize_browser_backend(value: str | None) -> str:
     normalized = (value or "").strip().lower()
     if normalized in ("camoufox", "firefox"):
@@ -655,7 +703,6 @@ def new_driver(
     if headless != 0:
         options.add_argument('--headless=new')
 
-    options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     window_size = str(os.environ.get("BROWSER_WINDOW_SIZE", "500,600") or "500,600")
@@ -694,30 +741,6 @@ def new_driver(
     options.add_argument('--disable-features=TranslateUI,ChromeSignin,ChromeSigninIntercept,SigninIntercept,SignInPromo,ImprovedSigninUI,ChromeWhatsNewUI,AutofillServerCommunication,PasswordManagerOnboarding,AccountConsistency')
     if startup_url:
         options.add_argument(startup_url)
-
-    host_rule_entries: list[str] = []
-
-    block_opt = int(os.environ.get("BLOCK_GOOGLE_OPT_GUIDE", "2"))
-    if block_opt == 2:
-        host_rule_entries.extend([
-            "MAP optimizationguide-pa.googleapis.com 127.0.0.1",
-            "MAP optimizationguide-pa.googleapis.com:443 127.0.0.1",
-            "MAP optimizationguide-pa.googleapis.com:80 127.0.0.1",
-        ])
-
-    block_noisy = int(os.environ.get("BLOCK_NOISY_HOSTS", "2"))
-    if block_noisy == 2:
-        host_rule_entries.extend([
-            "MAP update.googleapis.com 127.0.0.1",
-            "MAP browser-intake-datadoghq.com 127.0.0.1",
-            "MAP *.gvt1.com 127.0.0.1",
-            "MAP *.cloudflarestream.com 127.0.0.1",
-        ])
-
-    if host_rule_entries:
-        options.add_argument(f"--host-resolver-rules={', '.join(host_rule_entries)}")
-
-    options.add_argument('--disable-blink-features=AutomationControlled')
 
     browser_binary = resolve_camoufox_browser_binary_path() if resolved_backend == "camoufox" else resolve_browser_binary_path()
     if browser_binary:
@@ -821,15 +844,33 @@ def new_driver(
     if browser_user_data_dir and not native_camoufox_bootstrapped:
         _cleanup_stale_browser_startup_state(browser_user_data_dir)
 
+    chromedriver_binary = resolve_chromedriver_binary_path()
     driver = None
     if use_uc and uc is not None:
         try:
             with _uc_init_lock:
+                options._arguments = _FilteredChromeArgumentList(  # type: ignore[attr-defined]
+                    list(getattr(options, "arguments", [])),
+                    blocked_bases={"--no-sandbox", "--test-type"},
+                    dedupe_bases={
+                        "--lang",
+                        "--log-level",
+                        "--no-default-browser-check",
+                        "--no-first-run",
+                        "--no-sandbox",
+                        "--remote-debugging-host",
+                        "--remote-debugging-port",
+                        "--user-agent",
+                        "--user-data-dir",
+                        "--window-size",
+                    },
+                )
                 uc_kwargs: dict[str, Any] = {"options": options}
                 uc_kwargs["suppress_welcome"] = True
+                uc_kwargs["use_subprocess"] = False
+                uc_kwargs["no_sandbox"] = False
                 if browser_binary:
                     uc_kwargs["browser_executable_path"] = browser_binary
-                chromedriver_binary = resolve_chromedriver_binary_path()
                 if chromedriver_binary:
                     uc_kwargs["driver_executable_path"] = chromedriver_binary
                 if browser_user_data_dir:
@@ -843,7 +884,7 @@ def new_driver(
             driver = None
 
     if driver is None:
-        service = Service()
+        service = Service(executable_path=chromedriver_binary) if chromedriver_binary else Service()
         driver = webdriver.Chrome(service=service, options=options)
 
     if headless == 0 and desired_window_size is not None:

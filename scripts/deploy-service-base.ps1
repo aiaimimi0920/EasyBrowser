@@ -81,6 +81,51 @@ function Set-DotEnvValue {
     Set-Content -LiteralPath $Path -Value $lines
 }
 
+function Get-DotEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+    $prefix = "$Name="
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+            return $line.Substring($prefix.Length).Trim()
+        }
+    }
+    return ""
+}
+
+function Build-RuntimeImageIfNeeded {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$DockerfileRelativePath,
+        [Parameter(Mandatory = $true)]
+        [string]$ImageName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ImageName)) {
+        return
+    }
+    if (-not $ImageName.EndsWith(":local", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $dockerfilePath = Resolve-AbsolutePath -Path $DockerfileRelativePath -BaseDir $RepoRoot
+    Write-Host "Building runtime image: $ImageName" -ForegroundColor Cyan
+    & docker build -f $dockerfilePath -t $ImageName $RepoRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build runtime image: $ImageName"
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedConfigPath = Resolve-AbsolutePath -Path $ConfigPath -BaseDir $repoRoot
 $composeFile = Resolve-AbsolutePath -Path "deploy\service\base\docker-compose.yaml" -BaseDir $repoRoot
@@ -99,6 +144,19 @@ if (-not $SkipRender) {
 
 if (-not (Test-Path -LiteralPath $serviceEnvPath)) {
     throw "Missing rendered runtime env: $serviceEnvPath"
+}
+
+$runtimeMode = (Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_RUNTIME_MODE").ToLowerInvariant()
+if (-not $NoBuild -and $runtimeMode -eq "docker") {
+    if ([int](Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_CHROME_MIN_WARM") -gt 0) {
+        Build-RuntimeImageIfNeeded -RepoRoot $repoRoot -DockerfileRelativePath "service\\base\\docker\\chrome-runtime.Dockerfile" -ImageName (Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_CHROME_DOCKER_IMAGE")
+    }
+    if ([int](Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_CAMOUFOX_MIN_WARM") -gt 0) {
+        Build-RuntimeImageIfNeeded -RepoRoot $repoRoot -DockerfileRelativePath "service\\base\\docker\\camoufox-runtime.Dockerfile" -ImageName (Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_CAMOUFOX_DOCKER_IMAGE")
+    }
+    if ([int](Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_GEEKEZ_MIN_WARM") -gt 0) {
+        Build-RuntimeImageIfNeeded -RepoRoot $repoRoot -DockerfileRelativePath "service\\base\\docker\\geekez-runtime.Dockerfile" -ImageName (Get-DotEnvValue -Path $serviceEnvPath -Name "EASYBROWSER_GEEKEZ_DOCKER_IMAGE")
+    }
 }
 
 if ($Image -and $Pull) {

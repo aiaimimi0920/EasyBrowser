@@ -11,8 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -359,20 +359,25 @@ func (m *Manager) dockerCommandForProvider(providerID, runtimeID string) (*exec.
 		return nil, "", fmt.Errorf("docker image is not configured for provider %s", providerID)
 	}
 
+	containerName := dockerContainerName(providerID, runtimeID)
+	composeProject := dockerComposeProject()
+
 	args := []string{
 		"run",
 		"--rm",
 		"-i",
 		"--init",
 		"--shm-size=2g",
-		"--name", dockerContainerName(runtimeID),
+		"--name", containerName,
+		"--label", "easybrowser.managed_child=true",
+		"--label", fmt.Sprintf("easybrowser.provider_id=%s", providerID),
+		"--label", fmt.Sprintf("easybrowser.runtime_id=%s", runtimeID),
+		"--label", fmt.Sprintf("com.docker.compose.project=%s", composeProject),
+		"--label", fmt.Sprintf("com.docker.compose.service=%s", containerName),
 	}
 
-	if network := strings.TrimSpace(os.Getenv("EASYBROWSER_DOCKER_NETWORK")); network != "" {
-		args = append(args, "--network", network)
-	} else {
-		args = append(args, "--network", "Easy")
-	}
+	network := dockerNetworkName()
+	args = append(args, "--network", network, "--network-alias", containerName)
 
 	appendDockerEnv := func(key, value string) {
 		if strings.TrimSpace(key) == "" || value == "" {
@@ -393,7 +398,7 @@ func (m *Manager) dockerCommandForProvider(providerID, runtimeID string) (*exec.
 		appendDockerEnv("MAILBOX_SERVICE_API_KEY", coalesceEnv("MAILBOX_SERVICE_API_KEY", "J7L+RCwLIBEcMZHzz0rXjm4oyR9rymq9"))
 		appendDockerEnv("BROWSER_BINARY_PATH", coalesceEnv("EASYBROWSER_CHROME_BINARY_PATH", "/usr/bin/chromium"))
 		appendDockerEnv("CHROMEDRIVER_PATH", coalesceEnv("EASYBROWSER_CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
-		args = append(args, image, "python", "/opt/browserservice/repos/chrome/src/chrome_runtime/runtime_entry.py", "--provider", providerID, "--runtime-id", runtimeID)
+		args = append(args, image, "python", "/opt/easybrowser/runtimes/chrome/src/chrome_runtime/runtime_entry.py", "--provider", providerID, "--runtime-id", runtimeID)
 		return exec.Command(dockerPath, args...), "chrome runtime (docker)", nil
 	case "camoufox":
 		appendDockerEnv("EASYBROWSER_CAMOUFOX_HEADLESS", coalesceEnv("EASYBROWSER_CAMOUFOX_HEADLESS", "true"))
@@ -962,23 +967,44 @@ func runtimeLaunchMode(providerID string) string {
 func dockerImageForProvider(providerID string) string {
 	switch providerID {
 	case "chrome":
-		return coalesceEnv("EASYBROWSER_CHROME_DOCKER_IMAGE", "easybrowser/chrome-runtime:local")
+		return coalesceEnv("EASYBROWSER_CHROME_DOCKER_IMAGE", "easy-browser/chrome-runtime:local")
 	case "camoufox":
-		return coalesceEnv("EASYBROWSER_CAMOUFOX_DOCKER_IMAGE", "easybrowser/camoufox-runtime:local")
+		return coalesceEnv("EASYBROWSER_CAMOUFOX_DOCKER_IMAGE", "easy-browser/camoufox-runtime:local")
 	case "geekez":
-		return coalesceEnv("EASYBROWSER_GEEKEZ_DOCKER_IMAGE", "easybrowser/geekez-runtime:local")
+		return coalesceEnv("EASYBROWSER_GEEKEZ_DOCKER_IMAGE", "easy-browser/geekez-runtime:local")
 	default:
 		return ""
 	}
 }
 
-func dockerContainerName(runtimeID string) string {
-	normalized := strings.NewReplacer("_", "-", ":", "-", "/", "-", "\\", "-").Replace(strings.TrimSpace(runtimeID))
-	normalized = strings.ToLower(normalized)
-	if normalized == "" {
-		normalized = fmt.Sprintf("rt-%d", time.Now().UnixNano())
+func dockerContainerName(providerID, runtimeID string) string {
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		provider = "runtime"
 	}
-	return "easybrowser-" + normalized
+	return fmt.Sprintf("easy-browser-%s-%03d", provider, dockerRuntimeOrdinal(runtimeID))
+}
+
+func dockerRuntimeOrdinal(runtimeID string) int {
+	trimmed := strings.TrimSpace(runtimeID)
+	if trimmed == "" {
+		return 1
+	}
+	lastDash := strings.LastIndex(trimmed, "-")
+	if lastDash >= 0 && lastDash < len(trimmed)-1 {
+		if parsed, err := strconv.Atoi(trimmed[lastDash+1:]); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 1
+}
+
+func dockerComposeProject() string {
+	return coalesceEnv("EASYBROWSER_DOCKER_COMPOSE_PROJECT", "easy-browser")
+}
+
+func dockerNetworkName() string {
+	return coalesceEnv("EASYBROWSER_DOCKER_NETWORK", "EasyAiMi")
 }
 
 func coalesceEnv(keysAndFallback ...string) string {
