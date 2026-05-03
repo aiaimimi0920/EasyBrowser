@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -81,15 +82,33 @@ def bundle_for_import_code(import_code: str, payload: dict[str, Any]) -> dict[st
 
 
 def load_public_key(text: str) -> PublicKey:
-    return PublicKey(b64url_decode(text.strip()))
+    normalized = text.strip()
+    try:
+        key_bytes = b64url_decode(normalized)
+    except Exception:
+        key_bytes = b""
+    if len(key_bytes) == 32:
+        return PublicKey(key_bytes)
+    return load_private_key(normalized).public_key
 
 
 def load_private_key(text: str) -> PrivateKey:
-    return PrivateKey(b64url_decode(text.strip()))
+    normalized = text.strip()
+    try:
+        key_bytes = b64url_decode(normalized)
+    except Exception:
+        key_bytes = b""
+    if len(key_bytes) == 32:
+        return PrivateKey(key_bytes)
+    return PrivateKey(hashlib.sha256(normalized.encode("utf-8")).digest())
 
 
 def cmd_generate_keypair(args: argparse.Namespace) -> int:
-    private_key = PrivateKey.generate()
+    if args.seed_text or args.seed_text_file:
+        seed_text = args.seed_text.strip() if args.seed_text else read_text(args.seed_text_file)
+        private_key = load_private_key(seed_text)
+    else:
+        private_key = PrivateKey.generate()
     public_key = private_key.public_key
     private_text = b64url_encode(bytes(private_key))
     public_text = b64url_encode(bytes(public_key))
@@ -112,6 +131,16 @@ def cmd_generate_keypair(args: argparse.Namespace) -> int:
             "privateKey": private_text,
         }
         write_text(args.bundle_output, json.dumps(bundle, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_derive_public_key(args: argparse.Namespace) -> int:
+    private_key_text = args.private_key.strip() if args.private_key else read_text(args.private_key_file)
+    public_text = b64url_encode(bytes(load_private_key(private_key_text).public_key))
+    if args.output:
+        write_text(args.output, public_text + "\n")
+    else:
+        print(public_text)
     return 0
 
 
@@ -189,10 +218,20 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate_keypair = subparsers.add_parser("generate-keypair")
+    seed_group = generate_keypair.add_mutually_exclusive_group()
+    seed_group.add_argument("--seed-text", default="")
+    seed_group.add_argument("--seed-text-file", default="")
     generate_keypair.add_argument("--public-key-output", default="")
     generate_keypair.add_argument("--private-key-output", default="")
     generate_keypair.add_argument("--bundle-output", default="")
     generate_keypair.set_defaults(func=cmd_generate_keypair)
+
+    derive_public_key = subparsers.add_parser("derive-public-key")
+    derive_private_group = derive_public_key.add_mutually_exclusive_group(required=True)
+    derive_private_group.add_argument("--private-key", default="")
+    derive_private_group.add_argument("--private-key-file", default="")
+    derive_public_key.add_argument("--output", default="")
+    derive_public_key.set_defaults(func=cmd_derive_public_key)
 
     encode = subparsers.add_parser("encode")
     encode.add_argument("--account-id", required=True)

@@ -1,6 +1,8 @@
 param(
     [string]$ConfigPath = "config.yaml",
     [string]$ServiceEnvOutput = "",
+    [string]$ImportCode = "",
+    [string]$BootstrapFile = "",
     [switch]$NoBuild,
     [string]$Image = "",
     [switch]$Pull,
@@ -187,10 +189,13 @@ $resolvedServiceEnvOutput = if ([string]::IsNullOrWhiteSpace($ServiceEnvOutput))
 } else {
     Resolve-AbsolutePath -Path $ServiceEnvOutput -BaseDir $launcherRoot
 }
+$serviceConfigOutput = Resolve-AbsolutePath -Path "deploy\service\base\config.imported.yaml" -BaseDir $repoRoot
 
 $renderScript = Resolve-AbsolutePath -Path "scripts\render-derived-configs.ps1" -BaseDir $repoRoot
 $deployScript = Resolve-AbsolutePath -Path "scripts\deploy-service-base.ps1" -BaseDir $repoRoot
 $configExamplePath = Resolve-AbsolutePath -Path "config.example.yaml" -BaseDir $repoRoot
+$bootstrapScript = Resolve-AbsolutePath -Path "scripts\bootstrap-service-base-r2-config.py" -BaseDir $repoRoot
+$writeBootstrapScript = Resolve-AbsolutePath -Path "scripts\write-service-base-r2-bootstrap.ps1" -BaseDir $repoRoot
 
 if (-not $SkipInitConfig -and -not (Test-Path -LiteralPath $resolvedConfigPath)) {
     Copy-Item -LiteralPath $configExamplePath -Destination $resolvedConfigPath
@@ -203,9 +208,41 @@ if (-not (Test-Path -LiteralPath $resolvedConfigPath)) {
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolvedServiceEnvOutput) | Out-Null
 
-& powershell -ExecutionPolicy Bypass -File $renderScript `
-    -ConfigPath $resolvedConfigPath `
-    -ServiceEnvOutput $resolvedServiceEnvOutput
+if (-not [string]::IsNullOrWhiteSpace($ImportCode) -and -not [string]::IsNullOrWhiteSpace($BootstrapFile)) {
+    throw "Specify either ImportCode or BootstrapFile, not both."
+}
+
+$shouldBootstrapFromImport = -not [string]::IsNullOrWhiteSpace($ImportCode) -or -not [string]::IsNullOrWhiteSpace($BootstrapFile)
+if ($shouldBootstrapFromImport) {
+    $bootstrapHostDir = Join-Path $repoRoot 'deploy\service\base\bootstrap'
+    $bootstrapHostPath = Join-Path $bootstrapHostDir 'r2-bootstrap.json'
+    New-Item -ItemType Directory -Force -Path $bootstrapHostDir | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($ImportCode)) {
+        & powershell -ExecutionPolicy Bypass -File $writeBootstrapScript `
+            -ImportCode $ImportCode `
+            -OutputPath $bootstrapHostPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to materialize bootstrap file from import code with exit code $LASTEXITCODE"
+        }
+    } else {
+        $resolvedBootstrapFile = Resolve-AbsolutePath -Path $BootstrapFile -BaseDir $launcherRoot
+        if (-not (Test-Path -LiteralPath $resolvedBootstrapFile)) {
+            throw "Bootstrap file not found: $resolvedBootstrapFile"
+        }
+        Copy-Item -LiteralPath $resolvedBootstrapFile -Destination $bootstrapHostPath -Force
+    }
+    & python $bootstrapScript `
+        --bootstrap-path $bootstrapHostPath `
+        --config-path $serviceConfigOutput `
+        --runtime-env-path $resolvedServiceEnvOutput
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to bootstrap EasyBrowser service/base config with exit code $LASTEXITCODE"
+    }
+} else {
+    & powershell -ExecutionPolicy Bypass -File $renderScript `
+        -ConfigPath $resolvedConfigPath `
+        -ServiceEnvOutput $resolvedServiceEnvOutput
+}
 
 if ($resolvedServiceEnvOutput -ne $canonicalServiceEnvOutput) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $canonicalServiceEnvOutput) | Out-Null
@@ -242,6 +279,9 @@ if ($HostPort -gt 0) {
 }
 if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
     $deployArgs += @("-ComposeProjectName", $ComposeProjectName)
+}
+if ($shouldBootstrapFromImport) {
+    $deployArgs += "-SkipRender"
 }
 
 & powershell @deployArgs
