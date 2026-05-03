@@ -414,6 +414,7 @@ func (m *Manager) dockerCommandForProvider(providerID, runtimeID string) (*exec.
 }
 
 func (m *Manager) startChildCommand(providerID, runtimeID string, cmd *exec.Cmd, readyTimeout time.Duration, label string) (model.RuntimeView, error) {
+	prepareChildCommand(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return model.RuntimeView{}, err
@@ -620,9 +621,12 @@ func (m *Manager) readStderr(child *childProcess, reader io.Reader) {
 
 func (m *Manager) waitChild(child *childProcess) {
 	err := child.cmd.Wait()
+	m.mu.RLock()
+	stopping := child.stopping
+	m.mu.RUnlock()
 	if err != nil {
 		log.Printf("easybrowser child[%s] exited with error: %v", child.runtimeID, err)
-		m.service.MarkRuntimeStopped(child.runtimeID, true)
+		m.service.MarkRuntimeStopped(child.runtimeID, !stopping)
 	} else {
 		m.service.MarkRuntimeStopped(child.runtimeID, false)
 	}
@@ -710,7 +714,7 @@ func resolveBrowserbaseRuntime(execPath string) string {
 }
 
 func resolveChromeRuntime(execPath string) string {
-	return resolvePythonRuntime(execPath, filepath.Join("..", "..", "runtimes", "chrome", "src", "browser_runtime", "runtime_entry.py"))
+	return resolvePythonRuntime(execPath, filepath.Join("..", "..", "runtimes", "chrome", "src", "chrome_runtime", "runtime_entry.py"))
 }
 
 func localChromeRuntimeEnv(base []string) []string {
@@ -1032,7 +1036,7 @@ func (m *Manager) killChild(child *childProcess) {
 	child.stopping = true
 	m.mu.Unlock()
 	_ = child.stdin.Close()
-	_ = child.cmd.Process.Kill()
+	terminateChildProcessTree(child.cmd)
 }
 
 type providerPoolSnapshot struct {
