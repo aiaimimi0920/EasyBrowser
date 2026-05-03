@@ -155,6 +155,58 @@ func TestMarkRuntimeStoppedFailsActiveTask(t *testing.T) {
 	}
 }
 
+func TestListRuntimesSeparatesActiveAndHistoricalViews(t *testing.T) {
+	svc := New()
+
+	_, _, err := svc.RegisterRuntime(model.RuntimeRegistrationRequest{
+		RuntimeID:  "rt-active",
+		ProviderID: "chrome",
+		State:      "ready",
+	})
+	if err != nil {
+		t.Fatalf("register active runtime: %v", err)
+	}
+	_, _, err = svc.RegisterRuntime(model.RuntimeRegistrationRequest{
+		RuntimeID:  "rt-stopped",
+		ProviderID: "chrome",
+		State:      "ready",
+	})
+	if err != nil {
+		t.Fatalf("register stopped runtime: %v", err)
+	}
+	_, _, err = svc.RegisterRuntime(model.RuntimeRegistrationRequest{
+		RuntimeID:  "rt-cooled",
+		ProviderID: "camoufox",
+		State:      "ready",
+	})
+	if err != nil {
+		t.Fatalf("register cooled runtime: %v", err)
+	}
+
+	svc.MarkRuntimeStopped("rt-stopped", false)
+	svc.mu.Lock()
+	if runtime, ok := svc.runtimes["rt-cooled"]; ok {
+		runtime.View.State = "cooled"
+		runtime.View.Healthy = false
+		svc.syncRuntimeDerivedLocked(runtime)
+	}
+	svc.mu.Unlock()
+
+	data := svc.ListRuntimes()
+	if len(data.Runtimes) != 1 {
+		t.Fatalf("expected only active runtimes in runtimes list, got %d", len(data.Runtimes))
+	}
+	if len(data.ActiveRuntimes) != 1 || data.ActiveRuntimes[0].RuntimeID != "rt-active" {
+		t.Fatalf("expected active runtime list to contain rt-active, got %#v", data.ActiveRuntimes)
+	}
+	if len(data.HistoricalRuntimes) != 2 {
+		t.Fatalf("expected 2 historical runtimes, got %d", len(data.HistoricalRuntimes))
+	}
+	if data.HistoricalRuntimes[0].RuntimeID != "rt-cooled" && data.HistoricalRuntimes[1].RuntimeID != "rt-cooled" {
+		t.Fatalf("expected cooled runtime to appear in history, got %#v", data.HistoricalRuntimes)
+	}
+}
+
 func TestDirectTargetRuntimeAllowsPinnedReuseAfterPrimitiveFlowFailure(t *testing.T) {
 	svc := New()
 

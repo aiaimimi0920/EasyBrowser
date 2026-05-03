@@ -199,7 +199,9 @@ type RuntimeView struct {
 }
 
 type RuntimeListData struct {
-	Runtimes []RuntimeView `json:"runtimes"`
+	Runtimes           []RuntimeView `json:"runtimes"`
+	ActiveRuntimes     []RuntimeView `json:"active_runtimes,omitempty"`
+	HistoricalRuntimes []RuntimeView `json:"historical_runtimes,omitempty"`
 }
 
 type ProviderStatsView struct {

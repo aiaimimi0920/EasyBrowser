@@ -785,10 +785,25 @@ func (s *Service) ListRuntimes() model.RuntimeListData {
 
 	s.refreshCooldownsLocked()
 
-	runtimes := make([]model.RuntimeView, 0, len(s.runtimes))
+	activeRuntimes := make([]model.RuntimeView, 0, len(s.runtimes))
+	historicalRuntimes := make([]model.RuntimeView, 0, len(s.runtimes))
 	for _, runtime := range s.runtimes {
-		runtimes = append(runtimes, runtime.View)
+		if isHistoricalRuntimeState(runtime.View.State) {
+			historicalRuntimes = append(historicalRuntimes, runtime.View)
+			continue
+		}
+		activeRuntimes = append(activeRuntimes, runtime.View)
 	}
+	sortRuntimeViews(activeRuntimes)
+	sortRuntimeViews(historicalRuntimes)
+	return model.RuntimeListData{
+		Runtimes:           activeRuntimes,
+		ActiveRuntimes:     activeRuntimes,
+		HistoricalRuntimes: historicalRuntimes,
+	}
+}
+
+func sortRuntimeViews(runtimes []model.RuntimeView) {
 	slices.SortFunc(runtimes, func(a, b model.RuntimeView) int {
 		switch {
 		case a.ProviderID < b.ProviderID:
@@ -803,7 +818,15 @@ func (s *Service) ListRuntimes() model.RuntimeListData {
 			return 0
 		}
 	})
-	return model.RuntimeListData{Runtimes: runtimes}
+}
+
+func isHistoricalRuntimeState(state string) bool {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "stopped", "failed", "cooled":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) GetRuntime(runtimeID string) (model.RuntimeView, model.Trace, error) {
