@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -123,12 +124,18 @@ def _wait_code_try_candidates(
 
     last_err: Exception | None = None
     last_err_str = ""
+    saw_timeout = False
 
     for ref in candidates:
         r = str(ref or "").strip()
         if not r:
             continue
         try:
+            print(
+                "[python-browser-service] OTP candidate try "
+                f"ref_prefix={r[:80]} timeout_seconds={timeout_seconds}",
+                flush=True,
+            )
             code = wait_openai_code_by_provider(
                 provider="auto",
                 mailbox_ref=r,
@@ -145,16 +152,24 @@ def _wait_code_try_candidates(
         except Exception as e:
             last_err = e
             last_err_str = str(e)
+            print(
+                "[python-browser-service] OTP candidate failed "
+                f"ref_prefix={r[:80]} err={last_err_str}",
+                flush=True,
+            )
 
             s = last_err_str.lower()
             if "all gptmail keys are exhausted" in s or "quota" in s or "daily quota" in s:
                 raise RuntimeError("no_quota_for_otp")
 
             if "timeout waiting for 6-digit code" in s:
-                raise RuntimeError("otp_timeout")
+                saw_timeout = True
+                continue
 
             continue
 
+    if saw_timeout:
+        raise RuntimeError("otp_timeout")
     raise RuntimeError(f"failed to fetch openai code from all mailbox_ref candidates: {last_err}")
 
 
@@ -178,11 +193,14 @@ def repairer_drive_login_and_get_callback_url(
     dump_page_body: Callable[..., Any] | None = None,
     captcha_provider: str | None = None,
     browser_backend: str | None = None,
+    callback_url_contains: str = "localhost:1455",
+    success_label: str = "oauth callback",
+    allow_logged_in_surface_success: bool = False,
 ) -> tuple[str, str]:
     """Drive OpenAI login flow until OAuth redirects to callback URL.
 
     Returns:
-      (callback_url, chosen_mailbox_ref)
+      (target_url, chosen_mailbox_ref)
     """
 
     _dump = dump_page_body or _noop_dump_page_body
@@ -345,6 +363,44 @@ def repairer_drive_login_and_get_callback_url(
             and len(inputs) == 0
             and len(buttons) == 0
         )
+
+    def _is_auth_landing_shell(snapshot: dict[str, Any] | None) -> bool:
+        if not isinstance(snapshot, dict):
+            return False
+        url = str(snapshot.get("url") or "").lower()
+        title = str(snapshot.get("title") or "").strip().lower()
+        body = str(snapshot.get("body") or "").strip().lower()
+        buttons = snapshot.get("buttons")
+        if "auth.openai.com" not in url:
+            return False
+        if "log-in" not in url and "log-in-or-create-account" not in url:
+            return False
+        if not isinstance(buttons, list):
+            return False
+        button_texts = []
+        for item in buttons:
+            if isinstance(item, dict):
+                button_texts.append(str(item.get("text") or "").strip().lower())
+        return (
+            "your session has ended" in title
+            or "your session has ended" in body
+            or any(text == "log in" for text in button_texts)
+        )
+
+    def _click_auth_landing_log_in_if_needed(snapshot: dict[str, Any] | None = None) -> bool:
+        if not _is_auth_landing_shell(snapshot):
+            return False
+        landing_xpaths = [
+            "//a[normalize-space(.)='Log in']",
+            "//button[normalize-space(.)='Log in']",
+            "//*[self::a or self::button or self::div][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'log in')]",
+        ]
+        for xp in landing_xpaths:
+            if _click_if_found(driver, xp, click_with_debug=click_with_debug):
+                _dump(driver=driver, kind="repair_auth_landing_login_clicked", message=xp[:120])
+                time.sleep(1.0)
+                return True
+        return False
 
     def _resubmit_unified_email_stage(email_value: str) -> dict[str, Any] | None:
         try:
@@ -671,7 +727,27 @@ def repairer_drive_login_and_get_callback_url(
     except Exception:
         raise RuntimeError("did not reach auth.openai.com")
 
-    if str(browser_backend or "").strip().lower() == "camoufox":
+    def _is_logged_in_openai_web_url(url: str | None) -> bool:
+        lower = str(url or "").strip().lower()
+        if not lower:
+            return False
+        if lower.startswith("https://chatgpt.com/"):
+            return "/auth/" not in lower and "/api/auth/" not in lower and "error=" not in lower
+        if lower.startswith("https://platform.openai.com/"):
+            return "/login" not in lower and "/signup" not in lower and "/auth/" not in lower
+        return False
+
+    def _matches_success_target(current_url: str | None) -> bool:
+        normalized = str(current_url or "").strip()
+        if not normalized:
+            return False
+        if str(callback_url_contains or "").strip() and str(callback_url_contains) in normalized:
+            return True
+        if allow_logged_in_surface_success and _is_logged_in_openai_web_url(normalized):
+            return True
+        return False
+
+    if str(browser_backend or "").strip().lower() == "camoufox" and not allow_logged_in_surface_success and str(password or "").strip():
         def _fetch_code_native() -> tuple[str, str]:
             print(
                 "[python-browser-service] native repair flow waiting for OTP "
@@ -697,7 +773,7 @@ def repairer_drive_login_and_get_callback_url(
                 password=password,
                 fetch_code_fn=_fetch_code_native,
                 try_solve_challenge_fn=_try_solve_challenge,
-                callback_url_contains="localhost:1455",
+                callback_url_contains=callback_url_contains,
             )
             callback_url = str(native_result.get("callback_url") or "")
             chosen_ref = str(native_result.get("chosen_mailbox_ref") or "")
@@ -709,7 +785,7 @@ def repairer_drive_login_and_get_callback_url(
                 try:
                     setattr(driver, "_neuro_finalize_callback_state", {
                         "url": callback_url,
-                        "callbackMatched": True,
+                        "callbackMatched": _matches_success_target(callback_url),
                         "onConsentPage": False,
                         "challengePresent": False,
                     })
@@ -789,6 +865,17 @@ def repairer_drive_login_and_get_callback_url(
                     kind="repair_email_stage_snapshot",
                     message=f"round={_round}/{email_wait_rounds}",
                 )
+                if _click_auth_landing_log_in_if_needed(snapshot):
+                    recovered_stage = _wait_for_auth_surface_recovery(
+                        reason="auth-landing-log-in",
+                        timeout_seconds=12.0,
+                    )
+                    if recovered_stage == "password":
+                        skip_email_submit = True
+                        break
+                    email_input = _try_locate_email_input_once()
+                    if email_input is not None or recovered_stage == "email":
+                        break
         if _round < email_wait_rounds:
             time.sleep(float(os.environ.get("DEBUG_REPAIR_EMAIL_RETRY_SLEEP_SECONDS", "2.0") or "2.0"))
 
@@ -810,6 +897,14 @@ def repairer_drive_login_and_get_callback_url(
                 email_input = _try_locate_email_input_once()
                 if email_input is None:
                     raise RuntimeError("blocked challenge page")
+        if email_input is None and _click_auth_landing_log_in_if_needed(snapshot):
+            recovered_stage = _wait_for_auth_surface_recovery(
+                reason="auth-landing-log-in-final",
+                timeout_seconds=12.0,
+            )
+            if recovered_stage == "password":
+                skip_email_submit = True
+            email_input = _try_locate_email_input_once()
         if email_input is None and not skip_email_submit:
             if last_email_err is not None:
                 print(f"[python-browser-service][repairer] email-stage last error: {last_email_err}", flush=True)
@@ -920,20 +1015,27 @@ def repairer_drive_login_and_get_callback_url(
             except Exception:
                 pass
         _dump(driver=driver, kind="email_submitted", message="email submitted")
+        last_email_submit_at = time.time()
     elif skip_email_submit:
         _dump(driver=driver, kind="repair_email_skipped", message="password stage already present")
     else:
         _dump(driver=driver, kind="email_submitted_native", message="email submitted via native camoufox primitive")
+        last_email_submit_at = time.time()
 
     unified_followup_rounds = int(
         os.environ.get(
             "DEBUG_REPAIR_UNIFIED_FOLLOWUP_ROUNDS",
-            "4" if debug_visible else "2",
+            "0",
         )
-        or ("4" if debug_visible else "2")
+        or "0"
     )
-    if unified_followup_rounds < 1:
-        unified_followup_rounds = 1
+    if unified_followup_rounds < 0:
+        unified_followup_rounds = 0
+    email_followup_grace_seconds = float(
+        os.environ.get("REPAIR_EMAIL_FOLLOWUP_GRACE_SECONDS", "8") or "8"
+    )
+    if email_followup_grace_seconds < 1.0:
+        email_followup_grace_seconds = 1.0
     for _round in range(1, unified_followup_rounds + 1):
         if _is_password_stage_page():
             break
@@ -941,9 +1043,13 @@ def repairer_drive_login_and_get_callback_url(
             if _try_solve_challenge("after-email"):
                 time.sleep(1.0)
                 continue
+        if last_email_submit_at > 0 and (time.time() - last_email_submit_at) < email_followup_grace_seconds:
+            time.sleep(1.0)
+            continue
         if _is_unified_auth_context():
             result = _resubmit_unified_email_stage(str(email))
             if result is not None:
+                last_email_submit_at = time.time()
                 print(
                     "[python-browser-service][repairer] unified email followup "
                     f"round={_round}/{unified_followup_rounds} result={result}",
@@ -965,6 +1071,102 @@ def repairer_drive_login_and_get_callback_url(
             if el:
                 return el
         return None
+
+    def _collect_auth_surface_diag(*, current_url: str | None = None, page_txt: str | None = None) -> dict[str, Any]:
+        state = _inspect_auth_surface_state()
+        native_surface = state.get("nativeSurface") if isinstance(state, dict) else None
+        snapshot = state.get("snapshot") if isinstance(state, dict) else None
+        if not isinstance(native_surface, dict):
+            native_surface = {}
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+        try:
+            driver_url = str(getattr(driver, "current_url", "") or "")
+        except Exception:
+            driver_url = ""
+
+        resolved_url = str(current_url or snapshot.get("url") or native_surface.get("url") or driver_url or "")
+        resolved_txt = str(page_txt or snapshot.get("body") or native_surface.get("bodyExcerpt") or "")
+        button_texts: list[str] = []
+        for source in (native_surface.get("buttonTexts"), snapshot.get("buttons")):
+            if not isinstance(source, list):
+                continue
+            for item in source:
+                if isinstance(item, str):
+                    text = str(item).strip()
+                elif isinstance(item, dict):
+                    text = str(item.get("text") or item.get("value") or "").strip()
+                else:
+                    text = str(item or "").strip()
+                if text:
+                    button_texts.append(text[:120])
+
+        button_texts = list(dict.fromkeys(button_texts))
+        lower_txt = resolved_txt.lower()
+        button_texts_lower = [text.lower() for text in button_texts]
+        combined_lower = " ".join([lower_txt, *button_texts_lower]).strip()
+        send_code_markers = (
+            "email me a code",
+            "send code",
+            "send verification",
+            "get code",
+            "resend email",
+            "resend code",
+            "send again",
+            "check your inbox",
+            "verification code",
+            "enter code",
+            "email a verification code",
+        )
+        one_time_code_markers = (
+            "log in with a one-time code",
+            "one-time code",
+            "email a code",
+            "passwordless",
+        )
+        return {
+            "url": resolved_url,
+            "nativeStage": str(state.get("nativeStage") or ""),
+            "readyState": str(state.get("readyState") or ""),
+            "passwordInputVisible": bool(native_surface.get("passwordInputVisible")),
+            "emailInputVisible": bool(native_surface.get("emailInputVisible")),
+            "codeInputVisible": bool(native_surface.get("codeInputVisible")),
+            "challengePresent": bool(native_surface.get("challengePresent")),
+            "buttonTexts": button_texts[:12],
+            "bodyExcerpt": re.sub(r"\s+", " ", resolved_txt).strip()[:500],
+            "snapshotBlank": bool(state.get("snapshotBlank")),
+            "snapshotHasContent": bool(state.get("snapshotHasContent")),
+            "hasSendCodeMarker": any(marker in combined_lower for marker in send_code_markers),
+            "hasOneTimeCodeMarker": any(marker in combined_lower for marker in one_time_code_markers),
+            "hasStrongOtpHint": any(
+                marker in combined_lower
+                for marker in ("check your inbox", "verification code", "enter code", "resend email", "resend code")
+            ),
+        }
+
+    def _auth_surface_diag_text(*, current_url: str | None = None, page_txt: str | None = None) -> str:
+        diag = _collect_auth_surface_diag(current_url=current_url, page_txt=page_txt)
+        return json.dumps(diag, ensure_ascii=False, separators=(",", ":"))
+
+    def _is_passwordless_send_code_surface(
+        *,
+        current_url: str | None = None,
+        page_txt: str | None = None,
+        requested_one_time_code_path: bool = False,
+    ) -> bool:
+        diag = _collect_auth_surface_diag(current_url=current_url, page_txt=page_txt)
+        if diag.get("codeInputVisible"):
+            return False
+        if not diag.get("hasSendCodeMarker"):
+            return False
+        if diag.get("hasStrongOtpHint"):
+            return True
+        if requested_one_time_code_path and not diag.get("passwordInputVisible"):
+            return True
+        url_lower = str(diag.get("url") or "").lower()
+        if "email-verification" in url_lower:
+            return True
+        return False
 
     def _click_password_continue_if_needed() -> bool:
         try:
@@ -1006,11 +1208,165 @@ def repairer_drive_login_and_get_callback_url(
         except Exception:
             return False
 
+    def _pre_password_auth_error_state() -> dict[str, str] | None:
+        try:
+            body_text = str(
+                driver.execute_script(
+                    "return document && document.body ? (document.body.innerText || '') : ''; "
+                )
+                or ""
+            )
+        except Exception:
+            body_text = ""
+        try:
+            title_text = str(driver.execute_script("return (document && document.title) ? document.title : '';") or "")
+        except Exception:
+            title_text = ""
+        try:
+            current_url = str(getattr(driver, "current_url", "") or "")
+        except Exception:
+            current_url = ""
+
+        joined = "\n".join([title_text, body_text, current_url]).lower()
+        if not (
+            "oops, an error occurred" in joined
+            or "operation timed out" in joined
+            or ("try again" in joined and "auth.openai.com/log-in" in current_url.lower())
+        ):
+            return None
+        return {
+            "url": current_url,
+            "title": title_text,
+            "body": body_text[:1000],
+        }
+
+    def _click_pre_password_try_again_if_needed() -> bool:
+        retry_xpaths = [
+            "//*[self::button or self::a or self::div][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'try again')]",
+            "//*[self::button or self::a or self::div][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'retry')]",
+        ]
+        for xp in retry_xpaths:
+            if _click_if_found(driver, xp, click_with_debug=click_with_debug):
+                _dump(driver=driver, kind="repair_pre_password_try_again_clicked", message=xp[:120])
+                time.sleep(1.0)
+                return True
+        return False
+
+    def _click_one_time_code_if_needed() -> bool:
+        try:
+            current_url = str(getattr(driver, "current_url", "") or "").lower()
+        except Exception:
+            current_url = ""
+        try:
+            page_txt = str(
+                driver.execute_script("return document && document.body ? (document.body.innerText || '') : ''; ")
+                or ""
+            )
+        except Exception:
+            page_txt = ""
+        lower_txt = page_txt.lower()
+        on_password_page = (
+            "log-in/password" in current_url
+            or "enter your password" in lower_txt
+            or "password" in lower_txt
+        )
+        if not on_password_page:
+            return False
+
+        xpaths = [
+            "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'log in with a one-time code')]",
+            "//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'log in with a one-time code')]",
+            "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'one-time code')]",
+            "//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'one-time code')]",
+            "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'email me a code')]",
+            "//a[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'email me a code')]",
+            "//button[contains(normalize-space(.), '验证码')]",
+            "//a[contains(normalize-space(.), '验证码')]",
+        ]
+        for xpath in xpaths:
+            if _click_if_found(driver, xpath, click_with_debug=click_with_debug):
+                _dump(
+                    driver=driver,
+                    kind="repair_password_one_time_code_clicked",
+                    message=(
+                        f"requested one-time code xpath={xpath[:120]} "
+                        f"diag={_auth_surface_diag_text(current_url=current_url, page_txt=page_txt)}"
+                    ),
+                )
+                time.sleep(1.0)
+                _dump(
+                    driver=driver,
+                    kind="repair_password_one_time_code_post_click",
+                    message=_auth_surface_diag_text(),
+                )
+                return True
+        return False
+
+    requested_one_time_code_path = False
+    pre_password_auth_error_hits = 0
+    last_email_submit_at = max(0.0, float(last_email_submit_at or 0.0))
+    email_resubmit_min_seconds = float(os.environ.get("REPAIR_EMAIL_RESUBMIT_MIN_SECONDS", "12") or "12")
+    if email_resubmit_min_seconds < 2.0:
+        email_resubmit_min_seconds = 2.0
     for _ in range(60):
         if _is_human_verify_page():
             if _try_solve_challenge("before-password"):
                 time.sleep(1.0)
                 continue
+        pre_password_auth_error = _pre_password_auth_error_state()
+        if pre_password_auth_error:
+            pre_password_auth_error_hits += 1
+            _dump(
+                driver=driver,
+                kind="repair_pre_password_auth_error",
+                message=(
+                    f"hit={pre_password_auth_error_hits} "
+                    + json.dumps(pre_password_auth_error, ensure_ascii=False, separators=(",", ":"))
+                ),
+            )
+            if pre_password_auth_error_hits >= 3 and str(getattr(oauth, "auth_url", "") or "").strip():
+                try:
+                    driver.get(str(getattr(oauth, "auth_url", "") or ""))
+                    _dump(driver=driver, kind="repair_pre_password_auth_error_reload", message=f"hit={pre_password_auth_error_hits}")
+                    if _is_unified_auth_context():
+                        retry_result = _resubmit_unified_email_stage(str(email))
+                        if retry_result is not None:
+                            last_email_submit_at = time.time()
+                            print(
+                                "[python-browser-service][repairer] post-reload email resubmit "
+                                f"result={retry_result}",
+                                flush=True,
+                            )
+                    time.sleep(1.5)
+                    continue
+                except Exception:
+                    pass
+            if _click_pre_password_try_again_if_needed():
+                continue
+            if _is_unified_auth_context():
+                if last_email_submit_at > 0 and (time.time() - last_email_submit_at) < email_resubmit_min_seconds:
+                    time.sleep(0.6)
+                    continue
+                retry_result = _resubmit_unified_email_stage(str(email))
+                if retry_result is not None:
+                    last_email_submit_at = time.time()
+                    print(
+                        "[python-browser-service][repairer] pre-password auth error resubmit "
+                        f"result={retry_result}",
+                        flush=True,
+                    )
+                    time.sleep(1.0)
+                    continue
+        else:
+            pre_password_auth_error_hits = 0
+        if not _is_password_stage_page() and _try_locate_email_input_once() is not None and _is_unified_auth_context():
+            # Do not keep clicking Continue on the unified email page.
+            # Repeated resubmits are what most reliably trigger invalid_state / timeout.
+            time.sleep(0.6)
+            continue
+        if _click_one_time_code_if_needed():
+            requested_one_time_code_path = True
+            break
         pwd_inp = _password_input()
         if pwd_inp:
             native_password_submitted = False
@@ -1041,11 +1397,12 @@ def repairer_drive_login_and_get_callback_url(
             time.sleep(0.6)
             continue
 
-        _click_if_found(
-            driver,
-            "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'continue')]",
-            click_with_debug=click_with_debug,
-        )
+        if not (_is_unified_auth_context() and _try_locate_email_input_once() is not None):
+            _click_if_found(
+                driver,
+                "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'continue')]",
+                click_with_debug=click_with_debug,
+            )
         time.sleep(0.6)
 
     otp_stage_ready = False
@@ -1079,8 +1436,8 @@ def repairer_drive_login_and_get_callback_url(
                 otp_stage_ready = True
                 otp_stage_reason = "native_code_surface"
                 break
-            if isinstance(inspect_callback_state_on_driver(driver, callback_url_contains="localhost:1455"), dict):
-                callback_state = inspect_callback_state_on_driver(driver, callback_url_contains="localhost:1455")
+            if isinstance(inspect_callback_state_on_driver(driver, callback_url_contains=callback_url_contains), dict):
+                callback_state = inspect_callback_state_on_driver(driver, callback_url_contains=callback_url_contains)
                 if callback_state.get("callbackMatched"):
                     otp_stage_ready = True
                     otp_stage_reason = "native_callback"
@@ -1091,6 +1448,19 @@ def repairer_drive_login_and_get_callback_url(
             "log-in/password" in cur_url.lower()
             or "enter your password" in lower_txt
         )
+        if _is_passwordless_send_code_surface(
+            current_url=cur_url,
+            page_txt=page_txt,
+            requested_one_time_code_path=requested_one_time_code_path,
+        ):
+            otp_stage_ready = True
+            otp_stage_reason = "passwordless_send_code_surface"
+            _dump(
+                driver=driver,
+                kind="repair_passwordless_send_code_surface",
+                message=_auth_surface_diag_text(current_url=cur_url, page_txt=page_txt),
+            )
+            break
         if not on_password_page and (
             "verification code" in lower_txt
             or "check your inbox" in lower_txt
@@ -1113,7 +1483,12 @@ def repairer_drive_login_and_get_callback_url(
         except Exception:
             pass
         if on_password_page:
-            _click_password_continue_if_needed()
+            if _click_one_time_code_if_needed():
+                requested_one_time_code_path = True
+                time.sleep(0.8)
+                continue
+            if not requested_one_time_code_path:
+                _click_password_continue_if_needed()
         if _is_human_verify_page():
             if _try_solve_challenge("post-password"):
                 time.sleep(1.0)
@@ -1121,14 +1496,22 @@ def repairer_drive_login_and_get_callback_url(
         time.sleep(0.4)
 
     if not otp_stage_ready:
-        _dump(driver=driver, kind="repair_otp_stage_ready", message="password submitted but otp stage not reached")
+        _dump(
+            driver=driver,
+            kind="repair_otp_stage_ready",
+            message=(
+                "password submitted but otp stage not reached "
+                f"diag={_auth_surface_diag_text()}"
+            ),
+        )
         raise RuntimeError("password submitted but otp stage not reached")
 
     def _has_callback() -> bool:
         try:
-            return "localhost:1455" in str(getattr(driver, "current_url", "") or "")
+            current_url = str(getattr(driver, "current_url", "") or "")
         except Exception:
-            return False
+            current_url = ""
+        return _matches_success_target(current_url)
 
     def _code_input():
         selectors = [
@@ -1172,7 +1555,13 @@ def repairer_drive_login_and_get_callback_url(
             "?????",
             "??????",
         ]
-        return any(h in txt for h in hints)
+        if any(h in txt for h in hints):
+            return True
+        return _is_passwordless_send_code_surface(
+            current_url=str(getattr(driver, "current_url", "") or ""),
+            page_txt=txt,
+            requested_one_time_code_path=requested_one_time_code_path,
+        )
 
     def _click_send_code_if_needed() -> bool:
         send_code_xpaths = [
@@ -1186,7 +1575,11 @@ def repairer_drive_login_and_get_callback_url(
 
         for xp in send_code_xpaths:
             if _click_if_found(driver, xp, click_with_debug=click_with_debug):
-                print(f"[python-browser-service] clicked OTP send action xpath={xp[:80]}")
+                print(
+                    "[python-browser-service] clicked OTP send action "
+                    f"xpath={xp[:80]} diag={_auth_surface_diag_text()}",
+                    flush=True,
+                )
                 time.sleep(1.0)
                 return True
 
@@ -1204,6 +1597,28 @@ def repairer_drive_login_and_get_callback_url(
                 time.sleep(1.0)
                 return True
         return False
+
+    def _otp_surface_still_present() -> bool:
+        try:
+            cur_url = str(getattr(driver, "current_url", "") or "")
+        except Exception:
+            cur_url = ""
+        try:
+            page_txt = str(
+                driver.execute_script("return document && document.body ? (document.body.innerText || '') : ''; ")
+                or ""
+            )
+        except Exception:
+            page_txt = ""
+        lower_txt = page_txt.lower()
+        if "email-verification" in cur_url.lower():
+            return True
+        if _code_input():
+            return True
+        return any(
+            marker in lower_txt
+            for marker in ("verification code", "check your inbox", "resend email", "resend code", "enter code", "email a code")
+        )
 
     def _has_incorrect_code_hint() -> bool:
         try:
@@ -1265,7 +1680,7 @@ def repairer_drive_login_and_get_callback_url(
 
     def _await_callback_or_code_stage() -> Any:
         if str(browser_backend or "").strip().lower() == "camoufox":
-            native_callback = inspect_callback_state_on_driver(driver, callback_url_contains="localhost:1455")
+            native_callback = inspect_callback_state_on_driver(driver, callback_url_contains=callback_url_contains)
             if isinstance(native_callback, dict) and native_callback.get("callbackMatched"):
                 return "CALLBACK"
         if _has_callback():
@@ -1297,7 +1712,7 @@ def repairer_drive_login_and_get_callback_url(
         native_wait = wait_native_code_or_callback(
             driver,
             timeout_seconds=50,
-            callback_url_contains="localhost:1455",
+            callback_url_contains=callback_url_contains,
             try_solve_challenge_fn=_try_solve_challenge,
         )
         if native_wait.get("kind") == "callback":
@@ -1463,18 +1878,18 @@ def repairer_drive_login_and_get_callback_url(
         return False
 
     def _wait_callback_with_consent(timeout: int = 60) -> bool:
-        if str(browser_backend or "").strip().lower() == "camoufox":
+        if str(browser_backend or "").strip().lower() == "camoufox" and not allow_logged_in_surface_success:
             if wait_native_callback_with_consent(
                 driver,
                 timeout_seconds=timeout,
-                callback_url_contains="localhost:1455",
+                callback_url_contains=callback_url_contains,
                 try_solve_challenge_fn=_try_solve_challenge,
             ):
                 return True
         end = time.time() + max(5, int(timeout))
         while time.time() < end:
-            if str(browser_backend or "").strip().lower() == "camoufox":
-                native_callback = inspect_callback_state_on_driver(driver, callback_url_contains="localhost:1455")
+            if str(browser_backend or "").strip().lower() == "camoufox" and not allow_logged_in_surface_success:
+                native_callback = inspect_callback_state_on_driver(driver, callback_url_contains=callback_url_contains)
                 if isinstance(native_callback, dict):
                     if native_callback.get("callbackMatched"):
                         return True
@@ -1518,20 +1933,33 @@ def repairer_drive_login_and_get_callback_url(
             except Exception:
                 pass
             time.sleep(0.5)
+        if str(callback_url_contains or "").strip():
+            try:
+                WebDriverWait(driver, timeout).until(EC.url_contains(callback_url_contains))
+                return True
+            except Exception:
+                pass
         try:
-            WebDriverWait(driver, timeout).until(EC.url_contains("localhost:1455"))
-            return True
+            if allow_logged_in_surface_success and _is_logged_in_openai_web_url(str(getattr(driver, "current_url", "") or "")):
+                return True
         except Exception:
             pass
         if _click_consent_continue_if_needed():
             try:
-                WebDriverWait(driver, timeout).until(EC.url_contains("localhost:1455"))
+                if allow_logged_in_surface_success and _is_logged_in_openai_web_url(str(getattr(driver, "current_url", "") or "")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if not str(callback_url_contains or "").strip():
+                    raise RuntimeError("skip-url-contains-wait")
+                WebDriverWait(driver, timeout).until(EC.url_contains(callback_url_contains))
                 return True
             except Exception:
                 _dump(
                     driver=driver,
                     kind="consent_callback_timeout",
-                    message="consent continue clicked but callback not reached",
+                    message=f"consent continue clicked but {success_label} not reached",
                 )
         current_auth_error_state = _auth_error_page_state()
         if _is_terminal_post_otp_auth_error(current_auth_error_state):
@@ -1552,6 +1980,13 @@ def repairer_drive_login_and_get_callback_url(
         return False
 
     if v != "CALLBACK":
+        if not _otp_surface_still_present():
+            _dump(
+                driver=driver,
+                kind="otp_stage_lost_before_fetch",
+                message=_auth_surface_diag_text(),
+            )
+            raise RuntimeError("otp stage lost before fetching code")
         print(
             "[python-browser-service] waiting for OTP "
             f"candidate_count={len(mailbox_ref_candidates)}"
@@ -1580,6 +2015,13 @@ def repairer_drive_login_and_get_callback_url(
                 target = _code_input()
                 if not target:
                     raise RuntimeError("code stage detected but no otp input located")
+            elif not _otp_surface_still_present():
+                _dump(
+                    driver=driver,
+                    kind="otp_stage_lost_before_submit",
+                    message=_auth_surface_diag_text(),
+                )
+                raise RuntimeError("otp stage lost before submitting code")
             _submit_code(target, code, tag="otp_submitted")
         else:
             _dump(driver=driver, kind="otp_submitted_native", message="otp submitted via native camoufox primitive")
@@ -1638,24 +2080,24 @@ def repairer_drive_login_and_get_callback_url(
                 f"auth_error:{str(last_post_otp_auth_error_state.get('code') or 'auth_error_page')}"
             )
 
-        _dump(driver=driver, kind="callback_timeout", message="callback not reached after initial wait")
+        _dump(driver=driver, kind="callback_timeout", message=f"{success_label} not reached after initial wait")
 
         if _has_incorrect_code_hint():
             _raise_if_terminal_otp_rejection(tag_suffix="_post_callback_timeout")
 
-        _dump(driver=driver, kind="final_timeout", message="timeout waiting for oauth callback")
+        _dump(driver=driver, kind="final_timeout", message=f"timeout waiting for {success_label}")
 
         if "account has been deleted or deactivated" in body_text or "account_deactivated" in body_text:
             raise RuntimeError("account_deactivated")
 
         raise RuntimeError(
-            "timeout waiting for oauth callback "
+            f"timeout waiting for {success_label} "
             f"url={current_url!r}"
         )
 
     try:
         setattr(driver, "_neuro_repair_flow_result", {
-            "mode": "legacy-fallback",
+            "mode": "legacy-fallback" if callback_url_contains == "localhost:1455" else "web-login",
             "runner": "selenium-fallback" if str(browser_backend or "").strip().lower() == "camoufox" else "selenium",
         })
     except Exception:
@@ -1664,7 +2106,7 @@ def repairer_drive_login_and_get_callback_url(
     try:
         setattr(driver, "_neuro_finalize_callback_state", {
             "url": callback_url,
-            "callbackMatched": "localhost:1455" in callback_url,
+            "callbackMatched": _matches_success_target(callback_url),
             "onConsentPage": False,
             "challengePresent": False,
         })

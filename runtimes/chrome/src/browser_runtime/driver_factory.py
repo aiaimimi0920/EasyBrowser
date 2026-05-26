@@ -663,14 +663,41 @@ def new_driver(
     resolve_chrome_version_main_fn: Callable[[], int | None],
     startup_user_agent: str = "",
     browser_user_data_dir: str = "",
+    browser_profile_directory: str = "",
+    browser_debugger_address: str = "",
     startup_url: str = "",
     remove_args: set[str] | None = None,
 ):
     resolved_backend = normalize_browser_backend(browser_backend or os.environ.get("DEFAULT_BROWSER_BACKEND"))
     cleanup_root: str | None = None
     effective_user_data_dir = str(browser_user_data_dir or "").strip()
+    effective_profile_directory = str(browser_profile_directory or "").strip()
+    effective_debugger_address = str(browser_debugger_address or "").strip()
     native_camoufox_metadata: dict[str, Any] | None = None
     native_camoufox_bootstrapped = False
+    if effective_debugger_address:
+        options = Options()
+        options.add_experimental_option("debuggerAddress", effective_debugger_address)
+        service = Service(executable_path=resolve_chromedriver_binary_path()) if resolve_chromedriver_binary_path() else Service()
+        driver = webdriver.Chrome(service=service, options=options)
+        try:
+            patch_driver_sourceurl(driver)
+        except Exception:
+            pass
+        apply_runtime_stealth_fn(driver, headless=0)
+        try:
+            setattr(driver, "_neuro_browser_backend", resolved_backend)
+        except Exception:
+            pass
+        try:
+            setattr(driver, "_neuro_browser_debugger_address", effective_debugger_address)
+            setattr(driver, "_neuro_browser_user_data_dir", browser_user_data_dir or "")
+            setattr(driver, "_neuro_browser_profile_directory", effective_profile_directory or "Default")
+            setattr(driver, "_neuro_browser_startup_url", startup_url or "")
+            setattr(driver, "_neuro_browser_proxy", proxy or "")
+        except Exception:
+            pass
+        return driver, None
     if resolved_backend == "camoufox":
         if not effective_user_data_dir and native_camoufox_isolated_profile():
             cleanup_root, effective_user_data_dir = ensure_native_camoufox_profile_root()
@@ -721,7 +748,7 @@ def new_driver(
         options.add_argument(f'--user-agent={startup_user_agent}')
     if browser_user_data_dir:
         options.add_argument(f'--user-data-dir={browser_user_data_dir}')
-        options.add_argument('--profile-directory=Default')
+        options.add_argument(f'--profile-directory={effective_profile_directory or "Default"}')
     options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
 
     options.add_argument('--disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction,OptimizationGuideModelExecution')
@@ -975,6 +1002,7 @@ def new_driver(
         pass
     try:
         setattr(driver, "_neuro_browser_user_data_dir", browser_user_data_dir or "")
+        setattr(driver, "_neuro_browser_profile_directory", effective_profile_directory or "Default")
         setattr(driver, "_neuro_browser_startup_url", startup_url or "")
         setattr(driver, "_neuro_browser_proxy", proxy or "")
     except Exception:

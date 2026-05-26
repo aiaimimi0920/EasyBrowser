@@ -24,6 +24,15 @@ _DEFAULT_USER_AGENT = (
 )
 
 
+def _is_direct_mailbox_auth_failure(exc: Exception | None) -> bool:
+    message = str(exc or "").lower()
+    return (
+        "http 401" in message
+        or "private site password" in message
+        or "please provide the password" in message
+    )
+
+
 def encode_direct_mailbox_ref(
     *,
     address: str,
@@ -84,6 +93,8 @@ def wait_direct_mailbox_code(
                 return code
         except Exception as exc:
             last_error = exc
+            if _is_direct_mailbox_auth_failure(exc):
+                raise RuntimeError(f"direct mailbox auth failed: {exc}") from exc
         time.sleep(interval)
 
     if last_error is not None:

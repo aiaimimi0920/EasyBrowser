@@ -27,6 +27,7 @@ if __package__ is None or __package__ == "":
 from browser_runtime import driver_factory  # type: ignore
 from browser_runtime.session_runtime import (  # type: ignore
     BrowserSessionManager,
+    run_session_openai_web_login,
     run_session_register_auth,
     run_session_register_profile,
     run_session_register_finalize,
@@ -494,6 +495,23 @@ class ChromeRuntime:
                 "runner": str(repair_state.get("runner") or ""),
                 "callback_url": str(repair_state.get("callback_url") or ""),
                 "mailbox_ref": str(repair_state.get("mailbox_ref") or ""),
+            })
+
+        if action == "openai_web_login":
+            login_state = run_session_openai_web_login(
+                session,
+                auth_obj=_payload_dict(input_payload.get("auth")),
+                startup_url=_coalesce_string(input_payload.get("startup_url"), input_payload.get("startupUrl")),
+                captcha_provider=_coalesce_string(input_payload.get("captcha_provider"), input_payload.get("captchaProvider")),
+                browser_backend=_coalesce_string(input_payload.get("browser_backend"), input_payload.get("browserBackend")),
+            )
+            return _session_action_result(session, action, {
+                "state": login_state,
+                "email": str(login_state.get("email") or ""),
+                "mode": str(login_state.get("mode") or ""),
+                "runner": str(login_state.get("runner") or ""),
+                "target_url": str(login_state.get("target_url") or ""),
+                "mailbox_ref": str(login_state.get("mailbox_ref") or ""),
             })
 
         if action == "repair_finalize":

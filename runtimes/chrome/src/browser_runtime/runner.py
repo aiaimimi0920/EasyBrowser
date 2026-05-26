@@ -308,6 +308,8 @@ def _new_driver(
         resolve_chrome_version_main_fn=resolve_chrome_version_main,
         startup_user_agent=_build_startup_user_agent(),
         browser_user_data_dir=str(os.environ.get("BROWSER_USER_DATA_DIR", "") or "").strip(),
+        browser_profile_directory=str(os.environ.get("BROWSER_PROFILE_DIRECTORY", "") or "").strip(),
+        browser_debugger_address=str(os.environ.get("BROWSER_DEBUGGER_ADDRESS", "") or "").strip(),
         startup_url=str(startup_url_override or os.environ.get("BROWSER_STARTUP_URL", "") or "").strip(),
         remove_args=remove_args,
     )

@@ -83,6 +83,23 @@ func TestExecuteSessionFlowRejectsInvalidStepForFlowType(t *testing.T) {
 	}
 }
 
+func TestExecuteSessionFlowAcceptsLoginFlow(t *testing.T) {
+	api := newTestBrowserAPI()
+
+	accepted, err := api.ExecuteSessionFlow("sess-test", model.BrowserSessionFlowRequest{
+		FlowType: "login",
+		Steps: []model.BrowserSessionFlowStep{
+			{StepType: "openai_web_login"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected login flow to be accepted, got %v", err)
+	}
+	if accepted.TaskID == "" {
+		t.Fatal("expected accepted flow task id")
+	}
+}
+
 func TestShouldEscalateAuthSubmit(t *testing.T) {
 	err := &model.NormalizedError{Code: "email_submit_not_found"}
 	if shouldEscalateAuthSubmit(err, 1, "email_submit_not_found") {
@@ -155,5 +172,27 @@ func TestIsConsentSurface(t *testing.T) {
 		"callback": true,
 	}) {
 		t.Fatal("did not expect callback surface to count as consent surface")
+	}
+}
+
+func TestMergedProviderResponsePromotesTopLevelFields(t *testing.T) {
+	merged := mergedProviderResponse(map[string]any{
+		"provider_response": map[string]any{
+			"id":  "browser-session-1",
+			"url": "https://auth.openai.com/email-verification",
+		},
+		"callback_url": "http://localhost:1455/auth/callback?code=abc",
+		"mailbox_ref":  "mailcreate:demo",
+		"mode":         "otp",
+		"runner":       "selenium",
+	})
+	if merged["callback_url"] != "http://localhost:1455/auth/callback?code=abc" {
+		t.Fatalf("expected callback_url promoted, got %#v", merged["callback_url"])
+	}
+	if merged["mailbox_ref"] != "mailcreate:demo" {
+		t.Fatalf("expected mailbox_ref promoted, got %#v", merged["mailbox_ref"])
+	}
+	if merged["url"] != "https://auth.openai.com/email-verification" {
+		t.Fatalf("expected provider response url preserved, got %#v", merged["url"])
 	}
 }

@@ -107,6 +107,13 @@ def _session_state_summary(session: "BrowserSession") -> dict[str, Any]:
             "mode": _state_mode(repair_login),
             "runner": _state_runner(repair_login),
         }
+    openai_web_login = session.state.get("openai_web_login")
+    if isinstance(openai_web_login, dict):
+        summary["openai_web_login"] = {
+            "mode": _state_mode(openai_web_login),
+            "runner": _state_runner(openai_web_login),
+            "target_url": str(openai_web_login.get("target_url") or ""),
+        }
     repair_finalize = session.state.get("repair_finalize")
     if isinstance(repair_finalize, dict):
         summary["repair_finalize"] = {

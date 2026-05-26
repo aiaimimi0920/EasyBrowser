@@ -16,6 +16,9 @@ const (
 )
 
 var mediumFlowStepsByType = map[string]map[string]struct{}{
+	"login": {
+		"openai_web_login": {},
+	},
 	"register": {
 		"register_auth":           {},
 		"register_profile":        {},
@@ -228,6 +231,8 @@ func (b *API) runFlowStep(record *SessionRecord, trace model.Trace, stepID, step
 		return b.runRepairLoginFlowStep(record, trace, stepID, input, state, deadline)
 	case "repair_finalize":
 		return b.runRepairFinalizeFlowStep(record, trace, stepID, input, state, deadline)
+	case "openai_web_login":
+		return b.runOpenAIWebLoginFlowStep(record, trace, stepID, input, state, deadline)
 	default:
 		return flowStepOutcome{
 			Err: &model.NormalizedError{
@@ -944,175 +949,234 @@ func (b *API) runRegisterOAuthFinalizeFlowStep(record *SessionRecord, trace mode
 }
 
 func (b *API) runRepairLoginFlowStep(record *SessionRecord, trace model.Trace, stepID string, input map[string]any, state *flowExecutionState, deadline time.Time) flowStepOutcome {
-	auth := asMap(input["auth"])
+	authInput := asMap(input["auth"])
+	auth := map[string]any{}
+	for key, value := range authInput {
+		auth[key] = value
+	}
 	email := coalesce(asString(input["email"]), asString(auth["email"]))
 	password := coalesce(asString(input["password"]), asString(auth["password"]))
-	startURL := coalesce(asString(input["startup_url"]), "https://platform.openai.com/login")
-	emailSurfaceHits := 0
-	passwordSurfaceHits := 0
-	indeterminateSurfaceHits := 0
-	reloadedIndeterminateSurface := false
-	directAuthBootstrapUsed := false
-	challengeResetUsed := false
-	if outcome := b.navigateFlowStep(record, trace, stepID, startURL, state); outcome.Err != nil {
-		return outcome
+	mailboxRef := coalesce(asString(input["mailbox_ref"]), asString(auth["mailbox_ref"]))
+	if email != "" {
+		auth["email"] = email
 	}
-	for round := 0; round < 8 && time.Now().Before(deadline); round++ {
-		surface, err := b.inspectSurface(record, trace, stepID, state)
-		if err != nil {
-			return flowStepOutcome{Err: err}
+	if password != "" {
+		auth["password"] = password
+	}
+	if mailboxRef != "" {
+		auth["mailbox_ref"] = mailboxRef
+	}
+
+	startURL := asString(input["startup_url"])
+	if startURL != "" {
+		if outcome := b.navigateFlowStep(record, trace, stepID, startURL, state); outcome.Err != nil {
+			return outcome
 		}
-		surface, err = b.recoverChallengeSurface(record, trace, stepID, surface, state, deadline)
-		if err != nil {
-			if err.Code == "blocked_challenge_page" && !challengeResetUsed {
-				if outcome := b.navigateFlowStep(record, trace, stepID, startURL, state); outcome.Err != nil {
-					return outcome
-				}
-				challengeResetUsed = true
-				time.Sleep(1500 * time.Millisecond)
-				continue
-			}
-			return flowStepOutcome{Artifacts: collectSurfaceArtifacts(surface), Summary: map[string]any{"surface": surface}, Err: err}
+	}
+
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return flowStepOutcome{
+			Err: &model.NormalizedError{
+				Category:  "timeout",
+				Code:      "repair_login_timeout",
+				Message:   "repair_login timed out before runtime execution",
+				Retriable: true,
+			},
 		}
-		currentURL := asString(surface["url"])
-		if isIndeterminateAuthSurface(surface) && isAuthSurfaceURL(currentURL) {
-			indeterminateSurfaceHits++
-			if shouldBootstrapDirectAuth(currentURL, indeterminateSurfaceHits, reloadedIndeterminateSurface, directAuthBootstrapUsed) {
-				if outcome := b.navigateFlowStep(record, trace, stepID, "https://auth.openai.com/log-in", state); outcome.Err != nil {
-					return outcome
-				}
-				directAuthBootstrapUsed = true
-				indeterminateSurfaceHits = 0
-				time.Sleep(1500 * time.Millisecond)
-				continue
-			}
-			if indeterminateSurfaceHits >= 3 && !reloadedIndeterminateSurface {
-				if outcome := b.navigateFlowStep(record, trace, stepID, startURL, state); outcome.Err != nil {
-					return outcome
-				}
-				reloadedIndeterminateSurface = true
-				indeterminateSurfaceHits = 0
-				time.Sleep(1500 * time.Millisecond)
-				continue
-			}
-			time.Sleep(1200 * time.Millisecond)
-			continue
+	}
+
+	runtimeInput := map[string]any{
+		"auth": auth,
+	}
+	if captchaProvider := coalesce(asString(input["captcha_provider"]), record.CaptchaProvider, "turnstile-solver-camoufox"); captchaProvider != "" {
+		runtimeInput["captcha_provider"] = captchaProvider
+	}
+	if browserBackend := asString(input["browser_backend"]); browserBackend != "" {
+		runtimeInput["browser_backend"] = browserBackend
+	}
+
+	status, err := b.executePrimitiveStep(
+		record,
+		trace,
+		stepID,
+		"repair_login",
+		nil,
+		runtimeInput,
+		int(remaining.Milliseconds()),
+		state,
+	)
+	if err != nil {
+		return flowStepOutcome{Err: err}
+	}
+
+	result := mergedProviderResponse(status.Result)
+	repairState := nestedMap(result, "state")
+	callbackURL := coalesce(lookupString(result, "callback_url"), lookupString(repairState, "callback_url"))
+	if callbackURL == "" {
+		return flowStepOutcome{
+			Summary: map[string]any{
+				"result": result,
+			},
+			Err: &model.NormalizedError{
+				Category:  "flow_error",
+				Code:      "repair_callback_missing",
+				Message:   "repair_login completed without callback_url",
+				Retriable: true,
+			},
 		}
-		indeterminateSurfaceHits = 0
-		if terminal := classifyTerminalSurface(surface); terminal != nil {
-			return flowStepOutcome{Artifacts: collectSurfaceArtifacts(surface), Summary: map[string]any{"surface": surface}, Err: terminal}
-		}
-		if boolValue(surface["broken_surface"]) {
-			return flowStepOutcome{
-				Artifacts: collectSurfaceArtifacts(surface),
-				Summary:   map[string]any{"surface": surface},
-				Err: &model.NormalizedError{
-					Category:  "flow_error",
-					Code:      "broken_auth_surface",
-					Message:   "repair_login reached a broken auth surface",
-					Retriable: true,
-				},
-			}
-		}
-		if boolValue(surface["callback"]) || boolValue(surface["otp_stage"]) {
-			state.RepairLoginState = surface
-			return flowStepOutcome{
-				Artifacts: collectSurfaceArtifacts(surface),
-				Summary: map[string]any{
-					"surface": surface,
-					"state":   "otp_pending",
-				},
-			}
-		}
-		if strings.Contains(currentURL, "chatgpt.com/auth/login_with") && !boolValue(surface["email_stage"]) && !boolValue(surface["password_stage"]) && !boolValue(surface["otp_stage"]) {
-			if outcome := b.navigateFlowStep(record, trace, stepID, "https://platform.openai.com/login", state); outcome.Err != nil {
-				return outcome
-			}
-			time.Sleep(1500 * time.Millisecond)
-			continue
-		}
-		if boolValue(surface["password_stage"]) && boolValue(surface["otp_login_option"]) && strings.Contains(currentURL, "/log-in/password") {
-			if err := b.clickAuthLandingActionFiltered(record, trace, stepID,
-				[]string{
-					"log in with a one-time code",
-					"login with a one-time code",
-					"one-time code",
-					"email me a code",
-				},
-				nil,
-				[]string{"chatgpt.com/auth/login_with", "chatgpt.com/auth/login"},
-				state,
-			); err != nil {
-				return flowStepOutcome{Err: err}
-			}
-			if outcome, ok := b.waitForRepairOtpTransition(record, trace, stepID, state, deadline); ok {
-				return outcome
-			}
-			time.Sleep(1800 * time.Millisecond)
-			continue
-		}
-		if boolValue(surface["email_stage"]) && email != "" {
-			emailSurfaceHits++
-			if err := b.fillAndSubmitEmail(record, trace, stepID, email, state); err != nil {
-				if shouldEscalateAuthSubmit(err, emailSurfaceHits, "email_submit_not_found") {
-					if err := b.forceSubmitForm(record, trace, stepID, "", []string{
-						"input[name='email']",
-						"input[type='email']",
-						"input[autocomplete='email']",
-					}, "email form submit fallback failed", "email_submit_fallback_failed", state); err != nil {
-						return flowStepOutcome{Err: err}
-					}
-				} else {
-					return flowStepOutcome{Err: err}
-				}
-			}
-			continue
-		}
-		if boolValue(surface["password_stage"]) && password != "" {
-			passwordSurfaceHits++
-			if err := b.fillAndSubmitPassword(record, trace, stepID, password, state); err != nil {
-				if shouldEscalateAuthSubmit(err, passwordSurfaceHits, "password_submit_not_found") {
-					if err := b.forceSubmitForm(record, trace, stepID, "/password", []string{
-						"input[name='password']",
-						"input[type='password']",
-						"input[autocomplete='current-password']",
-						"input[autocomplete='new-password']",
-					}, "password form submit fallback failed", "password_submit_fallback_failed", state); err != nil {
-						return flowStepOutcome{Err: err}
-					}
-				} else {
-					return flowStepOutcome{Err: err}
-				}
-			}
-			continue
-		}
-		if boolValue(surface["session_ended"]) && strings.Contains(currentURL, "auth.openai.com/log-in") {
-			if outcome := b.navigateFlowStep(record, trace, stepID, "https://platform.openai.com/login", state); outcome.Err != nil {
-				return outcome
-			}
-			time.Sleep(1500 * time.Millisecond)
-			continue
-		}
-		if boolValue(surface["auth_landing"]) || boolValue(surface["login_cta"]) || boolValue(surface["session_ended"]) {
-			if err := b.clickAuthLandingActionFiltered(record, trace, stepID,
-				[]string{"log in", "login", "continue", "continue with email", "email"},
-				[]string{"login", "log-in", "signin", "sign-in"},
-				[]string{"chatgpt.com/auth/login_with", "chatgpt.com/auth/login"},
-				state,
-			); err != nil {
-				return flowStepOutcome{Err: err}
-			}
-			time.Sleep(1500 * time.Millisecond)
-			continue
-		}
-		time.Sleep(1200 * time.Millisecond)
+	}
+
+	resolvedEmail := coalesce(lookupString(result, "email"), lookupString(repairState, "email"), email)
+	resolvedMailboxRef := coalesce(lookupString(result, "mailbox_ref"), lookupString(repairState, "mailbox_ref"), mailboxRef)
+	mode := coalesce(lookupString(result, "mode"), lookupString(repairState, "mode"))
+	runner := coalesce(lookupString(result, "runner"), lookupString(repairState, "runner"))
+	currentURL := coalesce(
+		lookupString(nestedMap(status.Result, "resource"), "url"),
+		lookupString(repairState, "current_url"),
+		startURL,
+	)
+
+	state.RepairLoginState = result
+	artifacts := map[string]any{}
+	if currentURL != "" {
+		artifacts["url"] = currentURL
+	}
+	if callbackURL != "" {
+		artifacts["callback_url"] = callbackURL
+	}
+	if resolvedEmail != "" {
+		artifacts["email"] = resolvedEmail
+	}
+	if resolvedMailboxRef != "" {
+		artifacts["mailbox_ref"] = resolvedMailboxRef
+	}
+	if mode != "" {
+		artifacts["mode"] = mode
+	}
+	if runner != "" {
+		artifacts["runner"] = runner
 	}
 	return flowStepOutcome{
-		Err: &model.NormalizedError{
-			Category:  "flow_error",
-			Code:      "repair_surface_unresolved",
-			Message:   "repair_login did not reach a known surface",
-			Retriable: true,
+		Artifacts: artifacts,
+		Summary: map[string]any{
+			"state":        "callback_reached",
+			"callback_url": callbackURL,
+			"mode":         mode,
+			"runner":       runner,
+		},
+	}
+}
+
+func (b *API) runOpenAIWebLoginFlowStep(record *SessionRecord, trace model.Trace, stepID string, input map[string]any, state *flowExecutionState, deadline time.Time) flowStepOutcome {
+	authInput := asMap(input["auth"])
+	auth := map[string]any{}
+	for key, value := range authInput {
+		auth[key] = value
+	}
+	email := coalesce(asString(input["email"]), asString(auth["email"]))
+	password := coalesce(asString(input["password"]), asString(auth["password"]))
+	mailboxRef := coalesce(asString(input["mailbox_ref"]), asString(auth["mailbox_ref"]))
+	if email != "" {
+		auth["email"] = email
+	}
+	if password != "" {
+		auth["password"] = password
+	}
+	if mailboxRef != "" {
+		auth["mailbox_ref"] = mailboxRef
+	}
+
+	startURL := coalesce(asString(input["startup_url"]), "https://auth.openai.com/log-in-or-create-account")
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return flowStepOutcome{
+			Err: &model.NormalizedError{
+				Category:  "timeout",
+				Code:      "openai_web_login_timeout",
+				Message:   "openai_web_login timed out before runtime execution",
+				Retriable: true,
+			},
+		}
+	}
+
+	runtimeInput := map[string]any{
+		"auth":        auth,
+		"startup_url": startURL,
+	}
+	if captchaProvider := coalesce(asString(input["captcha_provider"]), record.CaptchaProvider, "turnstile-solver-camoufox"); captchaProvider != "" {
+		runtimeInput["captcha_provider"] = captchaProvider
+	}
+	if browserBackend := asString(input["browser_backend"]); browserBackend != "" {
+		runtimeInput["browser_backend"] = browserBackend
+	}
+
+	status, err := b.executePrimitiveStep(
+		record,
+		trace,
+		stepID,
+		"openai_web_login",
+		nil,
+		runtimeInput,
+		int(remaining.Milliseconds()),
+		state,
+	)
+	if err != nil {
+		return flowStepOutcome{Err: err}
+	}
+
+	result := mergedProviderResponse(status.Result)
+	loginState := nestedMap(result, "state")
+	targetURL := coalesce(
+		lookupString(result, "target_url"),
+		lookupString(loginState, "target_url"),
+		lookupString(nestedMap(status.Result, "resource"), "url"),
+		lookupString(loginState, "current_url"),
+	)
+	if targetURL == "" {
+		return flowStepOutcome{
+			Summary: map[string]any{
+				"result": result,
+			},
+			Err: &model.NormalizedError{
+				Category:  "flow_error",
+				Code:      "openai_web_login_target_missing",
+				Message:   "openai_web_login completed without target_url",
+				Retriable: true,
+			},
+		}
+	}
+
+	resolvedEmail := coalesce(lookupString(result, "email"), lookupString(loginState, "email"), email)
+	resolvedMailboxRef := coalesce(lookupString(result, "mailbox_ref"), lookupString(loginState, "mailbox_ref"), mailboxRef)
+	mode := coalesce(lookupString(result, "mode"), lookupString(loginState, "mode"))
+	runner := coalesce(lookupString(result, "runner"), lookupString(loginState, "runner"))
+
+	artifacts := map[string]any{
+		"url": targetURL,
+	}
+	if targetURL != "" {
+		artifacts["target_url"] = targetURL
+	}
+	if resolvedEmail != "" {
+		artifacts["email"] = resolvedEmail
+	}
+	if resolvedMailboxRef != "" {
+		artifacts["mailbox_ref"] = resolvedMailboxRef
+	}
+	if mode != "" {
+		artifacts["mode"] = mode
+	}
+	if runner != "" {
+		artifacts["runner"] = runner
+	}
+	return flowStepOutcome{
+		Artifacts: artifacts,
+		Summary: map[string]any{
+			"state":      "logged_in",
+			"target_url": targetURL,
+			"mode":       mode,
+			"runner":     runner,
 		},
 	}
 }
@@ -1731,6 +1795,29 @@ func primitiveResultValue(status model.TaskStatusData) any {
 		}
 	}
 	return nil
+}
+
+func mergedProviderResponse(result map[string]any) map[string]any {
+	if len(result) == 0 {
+		return nil
+	}
+	providerResponse := nestedMap(result, "provider_response")
+	if len(providerResponse) == 0 {
+		return result
+	}
+	merged := map[string]any{}
+	for key, value := range providerResponse {
+		merged[key] = value
+	}
+	for key, value := range result {
+		if key == "provider_response" {
+			continue
+		}
+		if _, exists := merged[key]; !exists {
+			merged[key] = value
+		}
+	}
+	return merged
 }
 
 func asMap(value any) map[string]any {

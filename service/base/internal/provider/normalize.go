@@ -178,7 +178,9 @@ func NormalizeExecutionResult(providerID, runtimeID string, raw map[string]any) 
 				out["resource_id"] = id
 			}
 		}
-	case "navigate", "click", "input_text", "submit", "wait_for", "read_value", "evaluate_script":
+	case "navigate", "click", "input_text", "submit", "wait_for", "read_value", "evaluate_script",
+		"register_auth", "register_profile", "register_finalize", "register_full",
+		"repair_login", "repair_finalize", "repair_full", "openai_web_login":
 		out["resource_kind"] = "page"
 		resource := normalizePageResource(response, coalesce(stringValue(raw["target_id"]), stringValue(raw["resource_id"])), "open")
 		if resource != nil {
@@ -195,7 +197,7 @@ func NormalizeExecutionResult(providerID, runtimeID string, raw map[string]any) 
 				out["detail"] = detail
 			}
 		}
-		for _, key := range []string{"state", "email", "mode", "runner", "callback_url", "mailbox_ref", "auth_file_path", "wait_update_file_path"} {
+		for _, key := range []string{"state", "email", "mode", "runner", "callback_url", "target_url", "mailbox_ref", "auth_file_path", "wait_update_file_path"} {
 			if value, ok := raw[key]; ok && value != nil && value != "" {
 				out[key] = sanitizeProviderValue(providerID, value)
 			}

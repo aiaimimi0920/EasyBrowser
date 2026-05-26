@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from . import driver_factory
@@ -36,6 +37,8 @@ def create_anonymous_driver(
     startup_url: str = "",
     startup_user_agent: str = "",
     browser_user_data_dir: str = "",
+    browser_profile_directory: str = "",
+    browser_debugger_address: str = "",
     remove_args: set[str] | None = None,
 ) -> tuple[Any, str | None]:
     return driver_factory.new_driver(
@@ -45,7 +48,9 @@ def create_anonymous_driver(
         apply_runtime_stealth_fn=apply_runtime_stealth,
         resolve_chrome_version_main_fn=driver_factory.resolve_chrome_version_main,
         startup_user_agent=startup_user_agent,
-        browser_user_data_dir=browser_user_data_dir,
+        browser_user_data_dir=browser_user_data_dir or str(os.environ.get("BROWSER_USER_DATA_DIR", "") or "").strip(),
+        browser_profile_directory=browser_profile_directory or str(os.environ.get("BROWSER_PROFILE_DIRECTORY", "") or "").strip(),
+        browser_debugger_address=browser_debugger_address or str(os.environ.get("BROWSER_DEBUGGER_ADDRESS", "") or "").strip(),
         startup_url=startup_url,
         remove_args=remove_args,
     )

@@ -51,7 +51,7 @@ func ClassifyAction(action string) ActionClass {
 
 func IsHighLevelBrowserAction(action string) bool {
 	switch CanonicalActionName(action) {
-	case "register_auth", "register_profile", "register_finalize", "register_oauth_auth", "register_oauth_finalize", "register_full", "repair_login", "repair_finalize", "repair_full":
+	case "register_auth", "register_profile", "register_finalize", "register_oauth_auth", "register_oauth_finalize", "register_full", "repair_login", "repair_finalize", "repair_full", "openai_web_login":
 		return true
 	default:
 		return false
@@ -75,6 +75,8 @@ func ProviderSupportsActionForResource(providerID string, capabilities model.Cap
 		case "navigate":
 			return capabilities.SupportsLocalProcess && (resourceKind == "" || resourceKind == "page")
 		case "click", "input_text", "submit", "wait_for", "read_value", "evaluate_script":
+			return capabilities.SupportsLocalProcess && (resourceKind == "" || resourceKind == "page")
+		case "register_auth", "register_profile", "register_finalize", "register_full", "repair_login", "repair_finalize", "repair_full", "openai_web_login":
 			return capabilities.SupportsLocalProcess && (resourceKind == "" || resourceKind == "page")
 		default:
 			return false

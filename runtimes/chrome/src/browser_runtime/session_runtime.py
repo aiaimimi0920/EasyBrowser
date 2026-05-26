@@ -8,6 +8,7 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 from . import runner
@@ -142,6 +143,15 @@ def _session_state_summary(session: "BrowserSession") -> dict[str, Any]:
             "callback_url": str(repair_login.get("callback_url") or ""),
             "runner": _state_runner(repair_login),
             "nativeCallbackMatched": bool(repair_login.get("native_callback_state", {}).get("callbackMatched")) if isinstance(repair_login.get("native_callback_state"), dict) else False,
+        }
+    openai_web_login = session.state.get("openai_web_login")
+    if isinstance(openai_web_login, dict):
+        summary["openai_web_login"] = {
+            "email": str(openai_web_login.get("email") or ""),
+            "mailbox_ref": str(openai_web_login.get("mailbox_ref") or ""),
+            "target_url": str(openai_web_login.get("target_url") or ""),
+            "runner": _state_runner(openai_web_login),
+            "loginMatched": bool(openai_web_login.get("native_callback_state", {}).get("callbackMatched")) if isinstance(openai_web_login.get("native_callback_state"), dict) else False,
         }
     repair_finalize = session.state.get("repair_finalize")
     if isinstance(repair_finalize, dict):
@@ -1042,6 +1052,101 @@ def run_session_repair_login(
         return {
             "email": email,
             "callback_url": callback_url,
+            "mailbox_ref": effective_mailbox_ref,
+            "mode": str(state.get("mode") or ""),
+            "runner": str(state.get("runner") or ""),
+        }
+
+
+def run_session_openai_web_login(
+    session: BrowserSession,
+    *,
+    auth_obj: dict[str, Any],
+    startup_url: str | None = None,
+    captcha_provider: str | None = None,
+    browser_backend: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(auth_obj, dict):
+        raise RuntimeError("openai web login requires auth object")
+    with session.lock:
+        email = str(auth_obj.get("email") or "").strip()
+        password = str(auth_obj.get("password") or "").strip()
+        mailbox_ref = str(auth_obj.get("mailbox_ref") or "").strip()
+        if not email:
+            raise RuntimeError("openai web login missing email")
+
+        start_url = str(startup_url or "").strip() or "https://auth.openai.com/log-in-or-create-account"
+        oauth = SimpleNamespace(auth_url=start_url)
+        if session.browser_backend == "camoufox":
+            _prime_session_camoufox_for_url(
+                session,
+                startup_url=start_url,
+                reason="openai-web-login",
+            )
+        try:
+            setattr(session.driver, "_neuro_repair_flow_result", None)
+        except Exception:
+            pass
+        try:
+            setattr(session.driver, "_neuro_finalize_callback_state", None)
+        except Exception:
+            pass
+
+        candidates = _build_repair_mailbox_ref_candidates(auth_obj)
+        target_url, chosen_ref = repairer_drive_login_and_get_callback_url(
+            driver=session.driver,
+            oauth=oauth,
+            email=email,
+            password=password,
+            mailbox_ref_candidates=candidates,
+            captcha_provider=captcha_provider or session.captcha_provider,
+            browser_backend=browser_backend or session.browser_backend,
+            smart_wait=runner._smart_wait,
+            click_with_debug=runner._click_with_debug,
+            get_mailbox_latest_message_id_by_provider=runner.get_mailbox_latest_message_id_by_provider,
+            wait_openai_code_by_provider=runner.wait_openai_code_by_provider,
+            mailcreate_base_url=runner.MAILCREATE_BASE_URL,
+            mailcreate_custom_auth=runner.MAILCREATE_CUSTOM_AUTH,
+            gptmail_base_url=runner.GPTMAIL_BASE_URL,
+            gptmail_api_key=runner.GPTMAIL_API_KEY,
+            gptmail_keys_file=runner.GPTMAIL_KEYS_FILE,
+            mailtm_api_base=runner.MAILTM_API_BASE,
+            dump_page_body=runner._dump_page_body,
+            callback_url_contains="",
+            success_label="openai web login",
+            allow_logged_in_surface_success=True,
+        )
+        repair_flow_result = _driver_repair_flow_result(session.driver)
+        effective_mailbox_ref = _effective_mailbox_ref(
+            explicit_ref=mailbox_ref,
+            candidate_refs=candidates,
+            chosen_ref=chosen_ref,
+        )
+        state = {
+            "email": email,
+            "password": password,
+            "oauth": oauth,
+            "target_url": target_url,
+            "mailbox_ref": effective_mailbox_ref,
+            "auth_source": _ensure_auth_mailbox_ref(auth_obj, effective_mailbox_ref),
+            "current_url": _session_current_url(session),
+            "mode": str((repair_flow_result or {}).get("mode") or ""),
+            "runner": str((repair_flow_result or {}).get("runner") or ""),
+            "native_callback_state": _driver_finalize_callback_state(session.driver),
+        }
+        session.state["openai_web_login"] = state
+        _record_session_event(
+            session,
+            "openai-web-login-complete",
+            email=email,
+            mailbox_ref=effective_mailbox_ref,
+            mode=str(state.get("mode") or "") or None,
+            runner=str(state.get("runner") or "") or None,
+            current_url=_session_current_url(session),
+        )
+        return {
+            "email": email,
+            "target_url": target_url,
             "mailbox_ref": effective_mailbox_ref,
             "mode": str(state.get("mode") or ""),
             "runner": str(state.get("runner") or ""),

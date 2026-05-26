@@ -86,8 +86,9 @@ export type BrowserSessionStepType =
   | "read_value"
   | "evaluate_script";
 
-export type BrowserSessionFlowType = "register" | "repair";
+export type BrowserSessionFlowType = "login" | "register" | "repair";
 export type BrowserSessionFlowStepType =
+  | "openai_web_login"
   | "register_auth"
   | "register_profile"
   | "register_finalize"

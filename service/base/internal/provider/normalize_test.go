@@ -134,3 +134,84 @@ func TestNormalizeChromeOpenResourcePreservesAttachContract(t *testing.T) {
 		t.Fatalf("expected attach endpoint preserved, got %#v", attach["endpoint"])
 	}
 }
+
+func TestNormalizeChromeRepairLoginResultPromotesStateFields(t *testing.T) {
+	result := NormalizeExecutionResult("chrome", "rt-chrome-3", map[string]any{
+		"action":      "repair_login",
+		"resource_id": "browser-session-456",
+		"response": map[string]any{
+			"id":    "browser-session-456",
+			"title": "OpenAI",
+			"url":   "https://auth.openai.com/email-verification",
+		},
+		"email":        "user@example.com",
+		"mode":         "otp",
+		"runner":       "selenium",
+		"callback_url": "http://localhost:1455/auth/callback?code=abc",
+		"mailbox_ref":  "mailcreate:demo",
+		"state": map[string]any{
+			"callback_url": "http://localhost:1455/auth/callback?code=abc",
+			"mailbox_ref":  "mailcreate:demo",
+			"current_url":  "https://auth.openai.com/email-verification",
+		},
+	})
+
+	if result["resource_kind"] != "page" {
+		t.Fatalf("expected page resource kind, got %#v", result["resource_kind"])
+	}
+	if result["callback_url"] != "http://localhost:1455/auth/callback?code=abc" {
+		t.Fatalf("expected callback_url promoted, got %#v", result["callback_url"])
+	}
+	if result["mailbox_ref"] != "mailcreate:demo" {
+		t.Fatalf("expected mailbox_ref promoted, got %#v", result["mailbox_ref"])
+	}
+	if result["mode"] != "otp" {
+		t.Fatalf("expected mode promoted, got %#v", result["mode"])
+	}
+	state, ok := result["state"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected state map preserved, got %#v", result["state"])
+	}
+	if state["current_url"] != "https://auth.openai.com/email-verification" {
+		t.Fatalf("expected state current_url preserved, got %#v", state["current_url"])
+	}
+}
+
+func TestNormalizeChromeOpenAIWebLoginResultPromotesTargetURL(t *testing.T) {
+	result := NormalizeExecutionResult("chrome", "rt-chrome-4", map[string]any{
+		"action":      "openai_web_login",
+		"resource_id": "browser-session-789",
+		"response": map[string]any{
+			"id":    "browser-session-789",
+			"title": "ChatGPT",
+			"url":   "https://chatgpt.com/",
+		},
+		"email":       "user@example.com",
+		"mode":        "web-login",
+		"runner":      "selenium",
+		"target_url":  "https://chatgpt.com/",
+		"mailbox_ref": "cloudflare_temp_email:demo",
+		"state": map[string]any{
+			"target_url":  "https://chatgpt.com/",
+			"mailbox_ref": "cloudflare_temp_email:demo",
+			"current_url": "https://chatgpt.com/",
+		},
+	})
+
+	if result["resource_kind"] != "page" {
+		t.Fatalf("expected page resource kind, got %#v", result["resource_kind"])
+	}
+	if result["target_url"] != "https://chatgpt.com/" {
+		t.Fatalf("expected target_url promoted, got %#v", result["target_url"])
+	}
+	if result["mailbox_ref"] != "cloudflare_temp_email:demo" {
+		t.Fatalf("expected mailbox_ref promoted, got %#v", result["mailbox_ref"])
+	}
+	state, ok := result["state"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected state map preserved, got %#v", result["state"])
+	}
+	if state["current_url"] != "https://chatgpt.com/" {
+		t.Fatalf("expected state current_url preserved, got %#v", state["current_url"])
+	}
+}
