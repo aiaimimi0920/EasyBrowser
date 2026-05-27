@@ -730,6 +730,9 @@ def new_driver(
     if headless != 0:
         options.add_argument('--headless=new')
 
+    if os.name != "nt":
+        options.add_argument('--no-sandbox')
+
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     window_size = str(os.environ.get("BROWSER_WINDOW_SIZE", "500,600") or "500,600")
@@ -895,7 +898,7 @@ def new_driver(
                 uc_kwargs: dict[str, Any] = {"options": options}
                 uc_kwargs["suppress_welcome"] = True
                 uc_kwargs["use_subprocess"] = False
-                uc_kwargs["no_sandbox"] = False
+                uc_kwargs["no_sandbox"] = os.name != "nt"
                 if browser_binary:
                     uc_kwargs["browser_executable_path"] = browser_binary
                 if chromedriver_binary:
