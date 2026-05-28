@@ -12,6 +12,10 @@ on:
         description: "Optional image version tag override"
         required: false
         type: string
+      release_tag:
+        description: "Standard release tag override; takes precedence over version"
+        required: false
+        type: string
       platform:
         description: "Docker build platform list"
         required: false
@@ -77,6 +81,8 @@ jobs:
           EASYBROWSER_GHCR_IMAGE_NAME: ${{ vars.EASYBROWSER_GHCR_IMAGE_NAME }}
           EASYBROWSER_GHCR_NAMESPACE: ${{ vars.EASYBROWSER_GHCR_NAMESPACE }}
           EASYBROWSER_GHCR_REGISTRY: ${{ vars.EASYBROWSER_GHCR_REGISTRY }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          VERSION_INPUT: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -116,7 +122,7 @@ jobs:
             run_smoke="true"
             platform="linux/amd64"
           else
-            version="${{ inputs.version }}"
+            version="${RELEASE_TAG_INPUT:-${VERSION_INPUT:-}}"
             if [[ -z "${version}" ]]; then
               version="release-$(date -u +%Y%m%d)-$(printf '%03d' "${GITHUB_RUN_NUMBER}")"
             fi
@@ -131,6 +137,7 @@ jobs:
           {
             echo "registry=${registry}"
             echo "version=${version}"
+            echo "release_tag=${version}"
             echo "platform=${platform}"
             echo "image_ref=${image_ref}"
             echo "smoke_image=${smoke_image}"
@@ -305,6 +312,14 @@ jobs:
           path: ${{ steps.runtime_config_upload.outputs.path }}
           if-no-files-found: error
 
+      - name: Upload Standard Runtime Config Distribution Manifest
+        if: steps.distribution_gate.outputs.r2_enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-base-r2-config-manifest
+          path: ${{ steps.runtime_config_upload.outputs.path }}
+          if-no-files-found: error
+
       - name: Generate Encrypted Owner Import Code
         if: steps.distribution_gate.outputs.import_enabled == 'true'
         id: import_code
@@ -363,5 +378,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: easybrowser-import-code-encrypted
+          path: ${{ steps.import_code.outputs.encrypted_path }}
+          if-no-files-found: error
+
+      - name: Upload Standard Encrypted Import Code Artifact
+        if: steps.distribution_gate.outputs.import_enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-base-import-code-encrypted
           path: ${{ steps.import_code.outputs.encrypted_path }}
           if-no-files-found: error

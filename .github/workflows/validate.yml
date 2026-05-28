@@ -36,3 +36,7 @@ jobs:
       - name: Run Repository Validation
         shell: pwsh
         run: .\scripts\test-all.ps1
+
+      - name: Validate Release Contract
+        shell: pwsh
+        run: python scripts/validate-release-contract.py

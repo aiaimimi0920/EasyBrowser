@@ -209,3 +209,7 @@ See:
 - Do not delete, rewrite, or reorder files in the old workspace while
   restructuring this public repo.
 - Perform all cleanup and path rewrites only in this target repository.
+
+## Release Contract
+
+This repository follows the EasyAiMi release contract v1 for GitHub Actions, GHCR publication, R2 config distribution, encrypted import-code artifacts, and blank-host local deployment. See [docs/release-contract.md](docs/release-contract.md) for the exact contract and project-specific exceptions.
