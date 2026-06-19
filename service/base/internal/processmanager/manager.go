@@ -398,6 +398,8 @@ func (m *Manager) dockerCommandForProvider(providerID, runtimeID string) (*exec.
 		appendDockerEnv("MAILBOX_SERVICE_API_KEY", coalesceEnv("MAILBOX_SERVICE_API_KEY", "J7L+RCwLIBEcMZHzz0rXjm4oyR9rymq9"))
 		appendDockerEnv("BROWSER_BINARY_PATH", coalesceEnv("EASYBROWSER_CHROME_BINARY_PATH", "/usr/bin/chromium"))
 		appendDockerEnv("CHROMEDRIVER_PATH", coalesceEnv("EASYBROWSER_CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
+		appendDockerEnv("TURNSTILE_SOLVER_BROWSER_TYPE", coalesceEnv("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE", "TURNSTILE_SOLVER_BROWSER_TYPE", ""))
+		appendDockerEnv("BROWSER_DEBUGGER_ADDRESS", coalesceEnv("EASYBROWSER_CHROME_DEBUGGER_ADDRESS", "BROWSER_DEBUGGER_ADDRESS", ""))
 		args = append(args, image, "python", "/opt/easybrowser/runtimes/chrome/src/chrome_runtime/runtime_entry.py", "--provider", providerID, "--runtime-id", runtimeID)
 		return exec.Command(dockerPath, args...), "chrome runtime (docker)", nil
 	case "camoufox":
@@ -737,6 +739,12 @@ func localChromeRuntimeEnv(base []string) []string {
 	}
 	if value := strings.TrimSpace(os.Getenv("EASYBROWSER_CHROMEDRIVER_PATH")); value != "" {
 		env = upsertEnv(env, "CHROMEDRIVER_PATH", value)
+	}
+	if value := strings.TrimSpace(coalesceEnv("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE", "TURNSTILE_SOLVER_BROWSER_TYPE", "")); value != "" {
+		env = upsertEnv(env, "TURNSTILE_SOLVER_BROWSER_TYPE", value)
+	}
+	if value := strings.TrimSpace(coalesceEnv("EASYBROWSER_CHROME_DEBUGGER_ADDRESS", "BROWSER_DEBUGGER_ADDRESS", "")); value != "" {
+		env = upsertEnv(env, "BROWSER_DEBUGGER_ADDRESS", value)
 	}
 	if value := strings.TrimSpace(os.Getenv("MAILBOX_SERVICE_BASE_URL")); value != "" {
 		env = upsertEnv(env, "MAILBOX_SERVICE_BASE_URL", value)

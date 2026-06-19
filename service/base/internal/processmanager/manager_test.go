@@ -129,17 +129,23 @@ func TestLocalChromeRuntimeEnvMapsEasyBrowserOverrides(t *testing.T) {
 	previousUc := os.Getenv("EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER")
 	previousBinary := os.Getenv("EASYBROWSER_CHROME_BINARY_PATH")
 	previousDriver := os.Getenv("EASYBROWSER_CHROMEDRIVER_PATH")
+	previousSolverBrowser := os.Getenv("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE")
+	previousDebuggerAddress := os.Getenv("EASYBROWSER_CHROME_DEBUGGER_ADDRESS")
 	t.Cleanup(func() {
 		restoreEnvVar("EASYBROWSER_CHROME_HEADLESS", previousHeadless)
 		restoreEnvVar("EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER", previousUc)
 		restoreEnvVar("EASYBROWSER_CHROME_BINARY_PATH", previousBinary)
 		restoreEnvVar("EASYBROWSER_CHROMEDRIVER_PATH", previousDriver)
+		restoreEnvVar("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE", previousSolverBrowser)
+		restoreEnvVar("EASYBROWSER_CHROME_DEBUGGER_ADDRESS", previousDebuggerAddress)
 	})
 
 	_ = os.Setenv("EASYBROWSER_CHROME_HEADLESS", "false")
 	_ = os.Setenv("EASYBROWSER_CHROME_USE_UNDETECTED_CHROMEDRIVER", "true")
 	_ = os.Setenv("EASYBROWSER_CHROME_BINARY_PATH", "C:\\custom\\chrome.exe")
 	_ = os.Setenv("EASYBROWSER_CHROMEDRIVER_PATH", "C:\\custom\\chromedriver.exe")
+	_ = os.Setenv("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE", "chromium")
+	_ = os.Setenv("EASYBROWSER_CHROME_DEBUGGER_ADDRESS", "127.0.0.1:9229")
 
 	env := localChromeRuntimeEnv([]string{"HEADLESS=1", "UNCHANGED=value"})
 	envMap := envSliceToMap(env)
@@ -156,11 +162,43 @@ func TestLocalChromeRuntimeEnvMapsEasyBrowserOverrides(t *testing.T) {
 	if envMap["CHROMEDRIVER_PATH"] != "C:\\custom\\chromedriver.exe" {
 		t.Fatalf("expected CHROMEDRIVER_PATH override, got %q", envMap["CHROMEDRIVER_PATH"])
 	}
+	if envMap["TURNSTILE_SOLVER_BROWSER_TYPE"] != "chromium" {
+		t.Fatalf("expected TURNSTILE_SOLVER_BROWSER_TYPE override, got %q", envMap["TURNSTILE_SOLVER_BROWSER_TYPE"])
+	}
+	if envMap["BROWSER_DEBUGGER_ADDRESS"] != "127.0.0.1:9229" {
+		t.Fatalf("expected BROWSER_DEBUGGER_ADDRESS override, got %q", envMap["BROWSER_DEBUGGER_ADDRESS"])
+	}
 	if envMap["PYTHONUNBUFFERED"] != "1" {
 		t.Fatalf("expected PYTHONUNBUFFERED=1, got %q", envMap["PYTHONUNBUFFERED"])
 	}
 	if envMap["UNCHANGED"] != "value" {
 		t.Fatalf("expected unrelated env to survive, got %q", envMap["UNCHANGED"])
+	}
+}
+
+func TestDockerChromeRuntimeCommandPassesTurnstileSolverBrowserOverride(t *testing.T) {
+	restore := captureEnv(t,
+		"EASYBROWSER_CHROME_DOCKER_IMAGE",
+		"EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE",
+		"EASYBROWSER_CHROME_DEBUGGER_ADDRESS",
+	)
+	defer restore()
+
+	_ = os.Setenv("EASYBROWSER_CHROME_DOCKER_IMAGE", "easy-browser/chrome-runtime:test")
+	_ = os.Setenv("EASYBROWSER_CHROME_TURNSTILE_SOLVER_BROWSER_TYPE", "chromium")
+	_ = os.Setenv("EASYBROWSER_CHROME_DEBUGGER_ADDRESS", "host.docker.internal:9229")
+
+	cmd, _, err := (&Manager{}).dockerCommandForProvider("chrome", "rt-chrome-000001")
+	if err != nil {
+		t.Fatalf("dockerCommandForProvider returned error: %v", err)
+	}
+
+	joinedArgs := strings.Join(cmd.Args, "\n")
+	if !strings.Contains(joinedArgs, "TURNSTILE_SOLVER_BROWSER_TYPE=chromium") {
+		t.Fatalf("expected docker args to include TURNSTILE_SOLVER_BROWSER_TYPE override, got:\n%s", joinedArgs)
+	}
+	if !strings.Contains(joinedArgs, "BROWSER_DEBUGGER_ADDRESS=host.docker.internal:9229") {
+		t.Fatalf("expected docker args to include BROWSER_DEBUGGER_ADDRESS override, got:\n%s", joinedArgs)
 	}
 }
 

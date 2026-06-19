@@ -5,6 +5,7 @@ import os
 import re
 import time
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -24,6 +25,7 @@ from .camoufox_native import (
     wait_native_callback_with_consent,
     wait_native_code_or_callback,
 )
+from .oauth_flow import generate_chatgpt_web_oauth_url
 from .turnstile_runtime import maybe_solve_turnstile_challenge
 
 
@@ -84,6 +86,91 @@ def _extract_explicit_auth_error_code(*parts: str) -> str | None:
         return None
     normalized = _normalize_auth_error_code(match.group(1))
     return normalized or None
+
+
+def _is_openai_community_url(url: str | None) -> bool:
+    try:
+        host = str(urlparse(str(url or "").strip()).hostname or "").lower()
+    except Exception:
+        return False
+    return host == "community.openai.com"
+
+
+def _is_logged_in_openai_web_url(url: str | None) -> bool:
+    lower = str(url or "").strip().lower()
+    if not lower:
+        return False
+    if lower.startswith("https://chatgpt.com/"):
+        return "/auth/" not in lower and "/api/auth/" not in lower and "error=" not in lower
+    if lower.startswith("https://platform.openai.com/"):
+        return "/login" not in lower and "/signup" not in lower and "/auth/" not in lower
+    if lower.startswith("https://community.openai.com/"):
+        return "/login" not in lower and "/session/" not in lower and "/auth/oidc/" not in lower and "error=" not in lower
+    return False
+
+
+def _trigger_openai_community_login(driver, *, click_with_debug: Callable[..., Any]) -> bool:
+    """Click Discourse's Community Log In CTA so it creates the OIDC authorize URL."""
+
+    xpaths = [
+        "//button[normalize-space()='Log In' or normalize-space()='Log in']",
+        "//a[normalize-space()='Log In' or normalize-space()='Log in']",
+        "//button[contains(translate(normalize-space(.), 'LOGIN', 'login'), 'log in')]",
+        "//a[contains(translate(normalize-space(.), 'LOGIN', 'login'), 'log in')]",
+        "//button[contains(@class, 'login-button') or contains(@class, 'login')]",
+        "//a[contains(@href, '/login')]",
+    ]
+    for xpath in xpaths:
+        if _click_if_found(driver, xpath, click_with_debug=click_with_debug):
+            return True
+    return False
+
+
+def _prime_openai_auth_environment(driver) -> bool:
+    """Reuse the existing ChatGPT browser bootstrap to warm OpenAI auth cookies/state."""
+
+    try:
+        generate_chatgpt_web_oauth_url(driver=driver)
+        return True
+    except Exception as exc:
+        print(f"[python-browser-service][repairer] openai auth environment bootstrap failed: {exc}", flush=True)
+        return False
+
+
+def _open_start_url_and_wait_for_auth(
+    driver,
+    start_url: str,
+    *,
+    click_with_debug: Callable[..., Any],
+    wait_for_auth: Callable[[int], Any] | None = None,
+    prime_openai_environment: Callable[[Any], bool] = _prime_openai_auth_environment,
+) -> None:
+    """Open an OpenAI login start URL, including Community's Discourse OIDC handoff."""
+
+    is_community_start = _is_openai_community_url(start_url)
+
+    def _wait(seconds: int) -> None:
+        if wait_for_auth is not None:
+            wait_for_auth(seconds)
+            return
+        WebDriverWait(driver, seconds).until(EC.url_contains("auth.openai.com"))
+
+    if is_community_start and prime_openai_environment is not None:
+        prime_openai_environment(driver)
+
+    driver.get(start_url)
+    try:
+        _wait(15 if is_community_start else 60)
+        return
+    except Exception:
+        if not is_community_start:
+            raise RuntimeError("did not reach auth.openai.com")
+    if not _trigger_openai_community_login(driver, click_with_debug=click_with_debug):
+        raise RuntimeError("did not reach auth.openai.com")
+    try:
+        _wait(60)
+    except Exception:
+        raise RuntimeError("did not reach auth.openai.com")
 
 
 def _email_verification_terminal_error(driver) -> str | None:
@@ -720,22 +807,8 @@ def repairer_drive_login_and_get_callback_url(
                 int(otp_min_mail_id_by_ref.get(candidate, 0) or 0),
             )
 
-    driver.get(oauth.auth_url)
-
-    try:
-        WebDriverWait(driver, 60).until(EC.url_contains("auth.openai.com"))
-    except Exception:
-        raise RuntimeError("did not reach auth.openai.com")
-
-    def _is_logged_in_openai_web_url(url: str | None) -> bool:
-        lower = str(url or "").strip().lower()
-        if not lower:
-            return False
-        if lower.startswith("https://chatgpt.com/"):
-            return "/auth/" not in lower and "/api/auth/" not in lower and "error=" not in lower
-        if lower.startswith("https://platform.openai.com/"):
-            return "/login" not in lower and "/signup" not in lower and "/auth/" not in lower
-        return False
+    start_url = str(getattr(oauth, "auth_url", "") or "")
+    _open_start_url_and_wait_for_auth(driver, start_url, click_with_debug=click_with_debug)
 
     def _matches_success_target(current_url: str | None) -> bool:
         normalized = str(current_url or "").strip()
@@ -1326,7 +1399,11 @@ def repairer_drive_login_and_get_callback_url(
             )
             if pre_password_auth_error_hits >= 3 and str(getattr(oauth, "auth_url", "") or "").strip():
                 try:
-                    driver.get(str(getattr(oauth, "auth_url", "") or ""))
+                    _open_start_url_and_wait_for_auth(
+                        driver,
+                        str(getattr(oauth, "auth_url", "") or ""),
+                        click_with_debug=click_with_debug,
+                    )
                     _dump(driver=driver, kind="repair_pre_password_auth_error_reload", message=f"hit={pre_password_auth_error_hits}")
                     if _is_unified_auth_context():
                         retry_result = _resubmit_unified_email_stage(str(email))

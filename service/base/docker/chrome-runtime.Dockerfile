@@ -43,6 +43,8 @@ COPY runtimes/chrome /opt/easybrowser/runtimes/chrome
 ENV PYTHONPATH=/opt/easybrowser/runtimes/chrome/src \
     BROWSER_BINARY_PATH=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    TURNSTILE_SOLVER_BROWSER_TYPE=chromium \
+    TURNSTILE_SOLVER_EXECUTABLE_PATH=/usr/bin/chromium \
     HEADLESS=1 \
     USE_UNDETECTED_CHROMEDRIVER=0
 

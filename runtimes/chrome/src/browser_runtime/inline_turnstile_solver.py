@@ -92,6 +92,18 @@ def _block_resource(resource_type: str) -> bool:
     return False
 
 
+def _browser_launch_identity() -> dict[str, str]:
+    executable_path = (
+        os.environ.get("TURNSTILE_SOLVER_EXECUTABLE_PATH")
+        or os.environ.get("BROWSER_BINARY_PATH")
+        or ""
+    ).strip()
+    if executable_path:
+        return {"executable_path": executable_path}
+    channel = (os.environ.get("TURNSTILE_SOLVER_BROWSER_TYPE") or "chrome").strip() or "chrome"
+    return {"channel": channel if channel != "camoufox" else "chrome"}
+
+
 async def _solve_once(
     *,
     website_url: str,
@@ -104,7 +116,6 @@ async def _solve_once(
     proxy_settings = _proxy_settings(proxy)
     timeout_ms = max(5_000, int((os.environ.get("TURNSTILE_SOLVER_TIMEOUT_MS") or "90000").strip() or "90000"))
     headless = (os.environ.get("TURNSTILE_SOLVER_HEADLESS") or "1").strip().lower() not in ("0", "false", "no", "off")
-    channel = (os.environ.get("TURNSTILE_SOLVER_BROWSER_TYPE") or "chrome").strip() or "chrome"
     viewport = {
         "width": int((os.environ.get("TURNSTILE_SOLVER_VIEWPORT_WIDTH") or "1365").strip() or "1365"),
         "height": int((os.environ.get("TURNSTILE_SOLVER_VIEWPORT_HEIGHT") or "1024").strip() or "1024"),
@@ -112,7 +123,7 @@ async def _solve_once(
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
-            channel=channel if channel != "camoufox" else "chrome",
+            **_browser_launch_identity(),
             headless=headless,
             proxy=proxy_settings,
             args=[
