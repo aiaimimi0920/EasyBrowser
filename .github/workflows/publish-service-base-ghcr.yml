@@ -97,6 +97,8 @@ jobs:
           EASYBROWSER_GHCR_IMAGE_NAME: ${{ vars.EASYBROWSER_GHCR_IMAGE_NAME }}
           EASYBROWSER_GHCR_NAMESPACE: ${{ vars.EASYBROWSER_GHCR_NAMESPACE }}
           EASYBROWSER_GHCR_REGISTRY: ${{ vars.EASYBROWSER_GHCR_REGISTRY }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          VERSION_INPUT: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
