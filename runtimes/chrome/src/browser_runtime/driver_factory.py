@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 from typing import Any, Callable
+from urllib.parse import SplitResult, unquote, urlsplit
 
 try:
     import undetected_chromedriver as uc  # type: ignore
@@ -143,13 +145,7 @@ def _cleanup_stale_browser_startup_state(browser_user_data_dir: str) -> None:
                 if pid <= 1 or pid == os.getpid():
                     continue
                 args_lc = args.lower()
-                if "chromedriver" in args_lc:
-                    try:
-                        os.kill(pid, signal.SIGKILL)
-                        killed_pids.append(pid)
-                    except Exception:
-                        pass
-                    continue
+                # A chromedriver command line does not identify its profile.
                 if "chrome" in args_lc and profile_flag in args:
                     try:
                         os.kill(pid, signal.SIGKILL)
@@ -344,63 +340,65 @@ def resolve_chromedriver_binary_path() -> str | None:
     return _which("chromedriver")
 
 
+def _parse_authenticated_proxy(proxy: str) -> SplitResult:
+    try:
+        parsed = urlsplit(proxy)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.port is None
+            or not parsed.username
+            or parsed.password is None
+        ):
+            raise ValueError
+    except ValueError:
+        raise ValueError("unsupported_authenticated_proxy_endpoint") from None
+    return parsed
+
+
 def create_proxy_extension(proxy: str, base_dir: str | None = None) -> str | None:
-    match = re.search(r"http://([^:]+):([^@]+)@([^:]+):(\d+)", proxy)
-    if not match:
+    if "@" not in proxy:
         return None
-    user, pwd, host, port = match.groups()
-
-    manifest_json = """
-    {
-        "version": "1.0.0",
-        "manifest_version": 2,
+    parsed = _parse_authenticated_proxy(proxy)
+    manifest_json = json.dumps({
+        "version": "2.0.0",
+        "manifest_version": 3,
         "name": "Chrome Proxy",
-        "permissions": [
-            "proxy",
-            "tabs",
-            "unlimitedStorage",
-            "storage",
-            "<all_urls>",
-            "webRequest",
-            "webRequestBlocking"
-        ],
-        "background": {
-            "scripts": ["background.js"]
+        "permissions": ["proxy", "webRequest", "webRequestAuthProvider"],
+        "host_permissions": ["<all_urls>"],
+        "background": {"service_worker": "background.js"},
+        "minimum_chrome_version": "108",
+    })
+    settings = {
+        "mode": "fixed_servers",
+        "rules": {
+            "singleProxy": {
+                "scheme": parsed.scheme, "host": parsed.hostname, "port": parsed.port,
+            },
+            "bypassList": ["localhost", "127.0.0.1", "<local>"],
         },
-        "minimum_chrome_version":"22.0.0"
     }
-    """
-
-    background_js = """
-    var config = {
-            mode: "fixed_servers",
-            rules: {
-              singleProxy: {
-                scheme: "http",
-                host: "%s",
-                port: parseInt(%s)
-              },
-              bypassList: ["localhost", "127.0.0.1", "<local>"]
-            }
-          };
-
-    chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
-
-    function callbackFn(details) {
-        return {
-            authCredentials: {
-                username: "%s",
-                password: "%s"
-            }
-        };
-    }
-
+    credentials = {"username": unquote(parsed.username), "password": unquote(parsed.password)}
+    background_js = (
+        "const config = " + json.dumps(settings) + ";\n"
+        "const credentials = " + json.dumps(credentials) + ";\n"
+        + """
+    chrome.proxy.settings.set({value: config, scope: "regular"});
     chrome.webRequest.onAuthRequired.addListener(
-                callbackFn,
-                {urls: ["<all_urls>"]},
-                ['blocking']
+        (details, callback) => {
+            const proxy = config.rules.singleProxy;
+            if (details.isProxy && details.challenger.host === proxy.host
+                    && details.challenger.port === proxy.port) {
+                callback({authCredentials: credentials});
+            } else {
+                callback({});
+            }
+        },
+        {urls: ["<all_urls>"]},
+        ["asyncBlocking"]
     );
-    """ % (host, port, user, pwd)
+    """
+    )
 
     if base_dir:
         plugin_dir = os.path.join(base_dir, "proxy_extension")
@@ -723,7 +721,14 @@ def new_driver(
     options = Options()
 
     anonymous_mode = int(os.environ.get("ANONYMOUS_MODE", "0") or "0")
-    if anonymous_mode == 1:
+    if anonymous_mode == 1 and proxy and "@" in proxy:
+        # Auth extensions are disabled in incognito. Keep private sessions in a
+        # disposable regular profile so credentials and proxy routing both work.
+        cleanup_root = cleanup_root or tempfile.mkdtemp(prefix="proxy_private_")
+        browser_user_data_dir = os.path.join(cleanup_root, "profile")
+        os.makedirs(browser_user_data_dir, exist_ok=True)
+        effective_profile_directory = "Default"
+    elif anonymous_mode == 1:
         options.add_argument('--incognito')
 
     headless = int(os.environ.get("HEADLESS", "0") or "0")
@@ -819,10 +824,17 @@ def new_driver(
 
     proxy_dir = None
     if proxy and "@" in proxy:
+        parsed_proxy = _parse_authenticated_proxy(proxy)
+        proxy_host = parsed_proxy.hostname
+        if ":" in proxy_host:
+            proxy_host = f"[{proxy_host}]"
+        # Enforce routing even if Chrome cannot load the authentication extension.
+        options.add_argument(f"--proxy-server={parsed_proxy.scheme}://{proxy_host}:{parsed_proxy.port}")
         proxy_dir = create_proxy_extension_fn(proxy, cleanup_root)
-        if proxy_dir:
-            options.add_argument(f"--load-extension={proxy_dir}")
-            options.add_argument(f"--disable-extensions-except={proxy_dir}")
+        if not proxy_dir:
+            raise RuntimeError("authenticated_proxy_extension_unavailable")
+        options.add_argument(f"--load-extension={proxy_dir}")
+        options.add_argument(f"--disable-extensions-except={proxy_dir}")
     elif proxy:
         options.add_argument(f'--proxy-server={proxy}')
     else:
